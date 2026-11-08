@@ -107,6 +107,30 @@ namespace djv
             //! input color space is resolved.
             DJV_MODELS_API void setExtColorSpaces(const std::map<std::string, std::string>&);
 
+            //! APFX: get the per file input color spaces, keyed by path.
+            //! Like the colorspace of a Nuke Read: they win over everything
+            //! else, including an input chosen in the settings.
+            DJV_MODELS_API const std::map<std::string, std::string>& getFileColorSpaces() const;
+
+            //! APFX: observe the per file input color spaces.
+            DJV_MODELS_API std::shared_ptr<ftk::IObservable<std::map<std::string, std::string> > > observeFileColorSpaces() const;
+
+            //! APFX: set the input color space of one file; empty goes
+            //! back to the default.
+            DJV_MODELS_API void setFileColorSpace(const std::string& path, const std::string& colorSpace);
+
+            //! APFX: observe the paths of the active files, the "A" file
+            //! first and then the compare files.
+            DJV_MODELS_API std::shared_ptr<ftk::IObservable<std::vector<std::string> > > observeActiveFilePaths() const;
+
+            //! APFX: the input color space for a layer the render draws:
+            //! the file's own, then the automatic resolution when the
+            //! settings' input is automatic, otherwise empty (the settings'
+            //! input applies). What the render's input resolvers call.
+            DJV_MODELS_API std::string resolveLayerInput(
+                const std::string& path,
+                const ftk::ImageTags& = {}) const;
+
             //! Get the LUT options.
             DJV_MODELS_API const tl::LUTOptions& getLUTOptions() const;
 
@@ -117,6 +141,7 @@ namespace djv
             DJV_MODELS_API void setLUTOptions(const tl::LUTOptions&);
 
         private:
+            std::string _fileColorSpace(const std::string& path) const;
             void _resolvedUpdate();
             tl::OCIOOptions _resolvedOCIOOptions();
             void _logInput(const std::string& path, const std::string& label) const;

@@ -14,6 +14,7 @@
 #include <djv/App/ColorMenu.h>
 #include <djv/App/CompareActions.h>
 #include <djv/App/CompareMenu.h>
+#include <djv/App/ColorToolBar.h>
 #include <djv/App/CompareToolBar.h>
 #include <djv/App/FileActions.h>
 #include <djv/App/FileMenu.h>
@@ -153,6 +154,7 @@ namespace djv
             std::shared_ptr<FileToolBar> fileToolBar;
             std::shared_ptr<CompareToolBar> compareToolBar;
             std::shared_ptr<ViewToolBar> viewToolBar;
+            std::shared_ptr<ColorToolBar> colorToolBar;
             std::shared_ptr<WindowToolBar> windowToolBar;
             std::shared_ptr<ToolsToolBar> toolsToolBar;
             std::shared_ptr<TabBar> tabBar;
@@ -421,6 +423,9 @@ namespace djv
                 toolBar->setSpacingRole(ftk::SizeRole::None);
                 toolBar->setParent(p.toolBarLayout);
             }
+            // APFX: the viewer color bar, on its own row like the top of
+            // the Nuke viewer.
+            p.colorToolBar = ColorToolBar::create(context, app, p.layout);
             p.splitterLayout = ftk::VerticalLayout::create(context, p.layout);
             p.splitterLayout->setSpacingRole(ftk::SizeRole::None);
             p.splitterLayout->setVStretch(ftk::Stretch::Expanding);
@@ -1397,9 +1402,7 @@ namespace djv
                     p.preview->setOCIOInputResolver(
                         [colorModel](const std::string& path, const ftk::ImageTags& tags)
                         {
-                            return colorModel->getOCIOOptions().input.empty() ?
-                                colorModel->resolveInput(path, tags) :
-                                std::string();
+                            return colorModel->resolveLayerInput(path, tags);
                         });
                     p.preview->setLUTOptions(colorModel->getLUTOptions());
                     p.preview->setPos(ftk::V2I(
@@ -1501,6 +1504,11 @@ namespace djv
                 p.windowToolBar->setVisible(settings.windowToolBar && !presentMode);
 
                 p.viewToolBar->setVisible(settings.viewToolBar && !presentMode);
+
+                if (p.colorToolBar)
+                {
+                    p.colorToolBar->setVisible(!presentMode);
+                }
 
                 p.toolsToolBar->setVisible(settings.toolsToolBar && !presentMode);
 

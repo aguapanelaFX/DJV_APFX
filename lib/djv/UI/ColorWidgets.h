@@ -50,6 +50,7 @@ namespace djv
 
         private:
             void _extUpdate();
+            void _fileUpdate();
 
             FTK_PRIVATE();
         };

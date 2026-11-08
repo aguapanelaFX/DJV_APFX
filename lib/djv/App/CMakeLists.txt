@@ -12,6 +12,7 @@ set(HEADERS
     ColorTool.h
     CompareActions.h
     CompareMenu.h
+    ColorToolBar.h
     CompareToolBar.h
     DiagTool.h
     ExportTool.h
@@ -73,6 +74,7 @@ set(SOURCE
     ColorTool.cpp
     CompareActions.cpp
     CompareMenu.cpp
+    ColorToolBar.cpp
     CompareToolBar.cpp
     DiagTool.cpp
     ExportTool.cpp

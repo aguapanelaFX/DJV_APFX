@@ -82,9 +82,7 @@ namespace djv
             viewport->setOCIOInputResolver(
                 [colorModel](const std::string& path, const ftk::ImageTags& tags)
                 {
-                    return colorModel->getOCIOOptions().input.empty() ?
-                        colorModel->resolveInput(path, tags) :
-                        std::string();
+                    return colorModel->resolveLayerInput(path, tags);
                 });
 
             p.lutOptionsObserver = ftk::Observer<tl::LUTOptions>::create(

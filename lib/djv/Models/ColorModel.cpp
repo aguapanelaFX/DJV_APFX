@@ -29,6 +29,10 @@ namespace djv
     {
         namespace
         {
+            // APFX: the configuration "Built in" stands for. OpenColorIO's
+            // own default is the smaller CG configuration.
+            const char* apfxACESConfig = "ocio://studio-config-latest";
+
 #if defined(TLRENDER_OCIO)
             // The configuration the options name, or nothing when it cannot
             // be read; the caller says what a failure means.
@@ -105,6 +109,8 @@ namespace djv
             std::string resolvedInputAlwaysLabel;
             std::shared_ptr<ftk::Observable<tl::LUTOptions> > lutOptions;
             std::shared_ptr<ftk::Observable<std::map<std::string, std::string> > > extColorSpaces;
+            std::shared_ptr<ftk::Observable<std::map<std::string, std::string> > > fileColorSpaces;
+            std::shared_ptr<ftk::Observable<std::vector<std::string> > > activeFilePaths;
             std::vector<std::pair<std::string, ftk::ImageTags> > activeFiles;
             std::shared_ptr<ftk::Observable<std::vector<std::string> > > resolvedInputs;
             // Set beside the resolved options: the input color space and
@@ -137,6 +143,16 @@ namespace djv
             {
                 ocioOptions = getDefaultOCIOOptions();
             }
+            // APFX: "Built in" is the ACES studio configuration.
+            if (tl::OCIOConfig::BuiltIn == ocioOptions.config)
+            {
+                ocioOptions.config = tl::OCIOConfig::File;
+                ocioOptions.fileName = apfxACESConfig;
+                ocioOptions.input.clear();
+                ocioOptions.display.clear();
+                ocioOptions.view.clear();
+                ocioOptions.look.clear();
+            }
             // Settings from a version that had "None" for the display and
             // the view, where OCIO was on and did nothing.
             defaultDisplayView(ocioOptions);
@@ -145,6 +161,11 @@ namespace djv
             std::map<std::string, std::string> extColorSpaces;
             p.settings->getT(settingsKeys::colorOCIOExtColorSpaces, extColorSpaces);
             p.extColorSpaces = ftk::Observable<std::map<std::string, std::string> >::create(extColorSpaces);
+            std::map<std::string, std::string> fileColorSpaces;
+            p.settings->getT(settingsKeys::colorOCIOFileColorSpaces, fileColorSpaces);
+            p.fileColorSpaces = ftk::Observable<std::map<std::string, std::string> >::create(fileColorSpaces);
+            p.activeFilePaths = ftk::Observable<std::vector<std::string> >::create(
+                std::vector<std::string>());
             p.resolvedOCIOOptions = ftk::Observable<tl::OCIOOptions>::create(
                 _resolvedOCIOOptions());
             p.resolvedInput = ftk::Observable<std::string>::create(
@@ -172,6 +193,15 @@ namespace djv
                 out.enabled = true;
                 out.config = tl::OCIOConfig::EnvVar;
             }
+            else
+            {
+                // APFX: ACES on by default, with the full ACES studio
+                // configuration (every ACES color space, cameras included),
+                // the way Nuke's ACES configs are.
+                out.enabled = true;
+                out.config = tl::OCIOConfig::File;
+                out.fileName = apfxACESConfig;
+            }
             // The configuration's own default display and view, so that a
             // reset shows the picture the way the configuration says rather
             // than leaving the display transform out.
@@ -193,6 +223,7 @@ namespace djv
             FTK_P();
             p.settings->setT(settingsKeys::colorOCIO, p.ocioOptions->get());
             p.settings->setT(settingsKeys::colorOCIOExtColorSpaces, p.extColorSpaces->get());
+            p.settings->setT(settingsKeys::colorOCIOFileColorSpaces, p.fileColorSpaces->get());
             p.settings->setT(settingsKeys::colorLUT, p.lutOptions->get());
         }
 
@@ -248,8 +279,72 @@ namespace djv
             if (value != p.activeFiles)
             {
                 p.activeFiles = value;
+                std::vector<std::string> paths;
+                for (const auto& i : value)
+                {
+                    paths.push_back(i.first);
+                }
+                p.activeFilePaths->setIfChanged(paths);
                 _resolvedUpdate();
             }
+        }
+
+        const std::map<std::string, std::string>& ColorModel::getFileColorSpaces() const
+        {
+            return _p->fileColorSpaces->get();
+        }
+
+        std::shared_ptr<ftk::IObservable<std::map<std::string, std::string> > > ColorModel::observeFileColorSpaces() const
+        {
+            return _p->fileColorSpaces;
+        }
+
+        void ColorModel::setFileColorSpace(const std::string& path, const std::string& colorSpace)
+        {
+            FTK_P();
+            if (path.empty())
+                return;
+            auto value = p.fileColorSpaces->get();
+            if (colorSpace.empty())
+            {
+                value.erase(path);
+            }
+            else
+            {
+                value[path] = colorSpace;
+            }
+            if (p.fileColorSpaces->setIfChanged(value))
+            {
+                _resolvedUpdate();
+            }
+        }
+
+        std::shared_ptr<ftk::IObservable<std::vector<std::string> > > ColorModel::observeActiveFilePaths() const
+        {
+            return _p->activeFilePaths;
+        }
+
+        std::string ColorModel::resolveLayerInput(
+            const std::string& path,
+            const ftk::ImageTags& tags) const
+        {
+            FTK_P();
+            const std::string file = _fileColorSpace(path);
+            if (!file.empty())
+                return file;
+            return p.ocioOptions->get().input.empty() ?
+                resolveInput(path, tags) :
+                std::string();
+        }
+
+        std::string ColorModel::_fileColorSpace(const std::string& path) const
+        {
+            FTK_P();
+            if (path.empty())
+                return std::string();
+            const auto& value = p.fileColorSpaces->get();
+            const auto i = value.find(path);
+            return i != value.end() ? i->second : std::string();
         }
 
         std::string ColorModel::resolveInput(
@@ -322,14 +417,18 @@ namespace djv
             // options; all empty when the user chose an input themselves.
             const tl::OCIOOptions& options = p.ocioOptions->get();
             std::vector<std::string> inputs(p.activeFiles.size());
-            if (options.enabled && options.input.empty())
+            if (options.enabled)
             {
                 for (size_t i = 0; i < p.activeFiles.size(); ++i)
                 {
-                    inputs[i] = _resolveInput(
-                        p.activeFiles[i].first,
-                        p.activeFiles[i].second,
-                        nullptr);
+                    // APFX: a file's own color space applies whatever the
+                    // settings' input is.
+                    inputs[i] = options.input.empty() ?
+                        _resolveInput(
+                            p.activeFiles[i].first,
+                            p.activeFiles[i].second,
+                            nullptr) :
+                        _fileColorSpace(p.activeFiles[i].first);
                 }
             }
             p.resolvedInputs->setIfChanged(inputs);
@@ -376,9 +475,27 @@ namespace djv
             }
             else if (!out.input.empty())
             {
-                // The settings name the input, so nothing resolves; the
-                // label says where this one came from too.
-                p.resolvedInputAlwaysLabel = out.input + " (settings)";
+                // APFX: the active file's own color space wins over the
+                // settings' input.
+                const std::string file = !p.activeFiles.empty() ?
+                    _fileColorSpace(p.activeFiles[0].first) :
+                    std::string();
+                if (!file.empty())
+                {
+                    out.input = file;
+                    const std::string label = file + " (file)";
+                    if (out.enabled)
+                    {
+                        p.resolvedInputLabel = label;
+                    }
+                    p.resolvedInputAlwaysLabel = label;
+                }
+                else
+                {
+                    // The settings name the input, so nothing resolves; the
+                    // label says where this one came from too.
+                    p.resolvedInputAlwaysLabel = out.input + " (settings)";
+                }
             }
             else
             {
@@ -442,13 +559,22 @@ namespace djv
                 return out;
             }
 
+            // APFX: the file's own color space, set in the Color tool,
+            // comes first, like the colorspace of a Nuke Read.
+            const std::string fileColorSpace = _fileColorSpace(path);
+
             // The user's own extension assignments come before what the
             // file says and before the configuration's rules: they are set
             // from inside DJV, so they are the most deliberate of the
             // three.
             const auto& extColorSpaces = p.extColorSpaces->get();
             const auto i = extColorSpaces.find(ext);
-            if (i != extColorSpaces.end() && !i->second.empty())
+            if (!fileColorSpace.empty())
+            {
+                out = fileColorSpace;
+                source = "file";
+            }
+            else if (i != extColorSpaces.end() && !i->second.empty())
             {
                 out = i->second;
                 source = "extension";

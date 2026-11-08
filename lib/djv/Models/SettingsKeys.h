@@ -52,6 +52,7 @@ namespace djv
             constexpr const char* audioMute = "/Audio/Mute";
             constexpr const char* colorOCIO = "/Color/OCIO";
             constexpr const char* colorOCIOExtColorSpaces = "/Color/OCIOExtColorSpaces";
+            constexpr const char* colorOCIOFileColorSpaces = "/Color/OCIOFileColorSpaces";
             constexpr const char* colorLUT = "/Color/LUT";
             constexpr const char* colorLevelsInRange = "/Color/Levels/InRange";
             constexpr const char* colorLevelsOutRange = "/Color/Levels/OutRange";
