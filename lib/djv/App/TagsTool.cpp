@@ -48,7 +48,10 @@ namespace djv
             std::shared_ptr<ftk::VerticalLayout> tagsLayout;
             std::shared_ptr<ftk::PushButton> newTagButton;
             std::shared_ptr<ftk::PushButton> undoButton;
-            std::shared_ptr<ftk::Label> inOutLabel;
+            std::shared_ptr<ftk::Label> markLabel;
+            std::shared_ptr<ftk::PushButton> markStartButton;
+            std::shared_ptr<ftk::PushButton> markEndButton;
+            std::shared_ptr<ftk::PushButton> clearMarkButton;
             std::shared_ptr<ftk::VerticalLayout> segmentsLayout;
             std::shared_ptr<ftk::PushButton> nukeButton;
             std::shared_ptr<ftk::PushButton> solvfxButton;
@@ -61,7 +64,7 @@ namespace djv
             std::shared_ptr<ftk::Observer<std::vector<Segment> > > segmentsObserver;
             std::shared_ptr<ftk::Observer<int> > selectedObserver;
             std::shared_ptr<ftk::Observer<std::pair<int64_t, int64_t> > > rangeObserver;
-            std::shared_ptr<ftk::Observer<std::pair<int64_t, int64_t> > > inOutObserver;
+            std::shared_ptr<ftk::Observer<SegmentMark> > markObserver;
         };
 
         void TagsTool::_init(
@@ -96,11 +99,20 @@ namespace djv
             p.undoButton->setTooltip("Undo the last change to the tags or segments.");
 
             ftk::Divider::create(context, ftk::Orientation::Vertical, layout);
-            p.inOutLabel = ftk::Label::create(context, layout);
+            hLayout = ftk::HorizontalLayout::create(context, layout);
+            hLayout->setSpacingRole(ftk::SizeRole::SpacingSmall);
+            p.markStartButton = ftk::PushButton::create(context, "Start  [", hLayout);
+            p.markStartButton->setTooltip("Mark the segment start at the current frame ([ key).");
+            p.markEndButton = ftk::PushButton::create(context, "End  ]", hLayout);
+            p.markEndButton->setTooltip("Mark the segment end at the current frame (] key).");
+            p.clearMarkButton = ftk::PushButton::create(context, "Clear", hLayout);
+            p.clearMarkButton->setTooltip("Clear the mark and deselect the segment.");
+            p.markLabel = ftk::Label::create(context, layout);
             auto help = ftk::Label::create(
                 context,
-                "Set the range with I and O, then press + on a tag.\n"
-                "Select a segment to edit it with I and O.",
+                "Mark with [ and ], then press + on a tag.\n"
+                "Select a segment to edit it with [ and ].\n"
+                "I and O stay the normal in and out points.",
                 layout);
             help->setTextRole(ftk::ColorRole::TextDisabled);
 
@@ -232,14 +244,37 @@ namespace djv
                     _p->range = value;
                     _p->segmentsRebuild = true;
                 });
-            p.inOutObserver = ftk::Observer<std::pair<int64_t, int64_t> >::create(
-                p.model->observeInOut(),
-                [this](const std::pair<int64_t, int64_t>& value)
+            p.markObserver = ftk::Observer<SegmentMark>::create(
+                p.model->observeMark(),
+                [this](const SegmentMark& value)
                 {
-                    _p->inOutLabel->setText(ftk::Format("In: {0}   Out: {1}   ({2} frames)").
-                        arg(std::to_string(value.first)).
-                        arg(std::to_string(value.second)).
-                        arg(std::to_string(value.second - value.first + 1)).str());
+                    _p->markLabel->setText(value.hasStart ?
+                        ftk::Format("Mark: {0} - {1}   ({2} frames)").
+                            arg(std::to_string(value.start)).
+                            arg(std::to_string(value.end)).
+                            arg(std::to_string(value.end - value.start + 1)).str() :
+                        std::string("Mark: none"));
+                });
+            p.markStartButton->setClickedCallback(
+                [modelWeak]
+                {
+                    if (auto model = modelWeak.lock())
+                        model->markStart();
+                });
+            p.markEndButton->setClickedCallback(
+                [modelWeak]
+                {
+                    if (auto model = modelWeak.lock())
+                        model->markEnd();
+                });
+            p.clearMarkButton->setClickedCallback(
+                [modelWeak]
+                {
+                    if (auto model = modelWeak.lock())
+                    {
+                        model->clearMark();
+                        model->select(-1);
+                    }
                 });
         }
 
@@ -330,7 +365,7 @@ namespace djv
 
                 auto addButton = ftk::ToolButton::create(context, row);
                 addButton->setIcon("AddSmall");
-                addButton->setTooltip("Add the in and out range to this tag.");
+                addButton->setTooltip("Add the marked range to this tag.");
                 addButton->setClickedCallback(
                     [modelWeak, index]
                     {
@@ -375,8 +410,8 @@ namespace djv
                 selectButton->setChecked(index == p.selected);
                 selectButton->setIcon("Next");
                 selectButton->setTooltip(
-                    "Select: jump to the segment and set the in and out points to it.\n"
-                    "While selected, I and O edit its start and end.");
+                    "Select: jump to the segment.\n"
+                    "While selected, [ and ] set its start and end.");
                 selectButton->setCheckedCallback(
                     [modelWeak, index](bool value)
                     {

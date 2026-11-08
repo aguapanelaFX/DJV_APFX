@@ -220,16 +220,14 @@ namespace djv
             std::shared_ptr<ftk::Observable<bool> > hasFile;
             std::shared_ptr<ftk::Observable<std::pair<int64_t, int64_t> > > range;
             std::shared_ptr<ftk::Observable<int64_t> > currentFrame;
-            std::shared_ptr<ftk::Observable<std::pair<int64_t, int64_t> > > inOut;
+            std::shared_ptr<ftk::Observable<SegmentMark> > mark;
 
             std::vector<Snapshot> undo;
             double rate = 24.0;
             ftk::Path path;
-            bool settingInOut = false;
 
             std::shared_ptr<ftk::Observer<std::shared_ptr<tl::Player> > > playerObserver;
             std::shared_ptr<ftk::Observer<OTIO_NS::RationalTime> > currentTimeObserver;
-            std::shared_ptr<ftk::Observer<OTIO_NS::TimeRange> > inOutObserver;
         };
 
         void TagsModel::_init(
@@ -257,8 +255,7 @@ namespace djv
             p.range = ftk::Observable<std::pair<int64_t, int64_t> >::create(
                 std::make_pair<int64_t, int64_t>(0, 0));
             p.currentFrame = ftk::Observable<int64_t>::create(0);
-            p.inOut = ftk::Observable<std::pair<int64_t, int64_t> >::create(
-                std::make_pair<int64_t, int64_t>(0, 0));
+            p.mark = ftk::Observable<SegmentMark>::create(SegmentMark());
 
             p.playerObserver = ftk::Observer<std::shared_ptr<tl::Player> >::create(
                 app->observePlayer(),
@@ -332,9 +329,70 @@ namespace djv
             return _p->currentFrame;
         }
 
-        std::shared_ptr<ftk::IObservable<std::pair<int64_t, int64_t> > > TagsModel::observeInOut() const
+        std::shared_ptr<ftk::IObservable<SegmentMark> > TagsModel::observeMark() const
         {
-            return _p->inOut;
+            return _p->mark;
+        }
+
+        void TagsModel::markStart()
+        {
+            FTK_P();
+            if (!p.player)
+                return;
+            const int64_t frame = p.currentFrame->get();
+            const int selected = p.selected->get();
+            auto segments = p.segments->get();
+            if (selected >= 0 && selected < static_cast<int>(segments.size()))
+            {
+                // Edit the selected segment.
+                Segment segment = segments[selected];
+                segment.start = frame;
+                if (segment.end < segment.start)
+                    segment.end = segment.start;
+                setSegment(selected, segment);
+                return;
+            }
+            SegmentMark mark = p.mark->get();
+            mark.hasStart = true;
+            mark.start = frame;
+            if (!mark.hasEnd || mark.end < mark.start)
+            {
+                mark.end = mark.start;
+            }
+            p.mark->setIfChanged(mark);
+        }
+
+        void TagsModel::markEnd()
+        {
+            FTK_P();
+            if (!p.player)
+                return;
+            const int64_t frame = p.currentFrame->get();
+            const int selected = p.selected->get();
+            auto segments = p.segments->get();
+            if (selected >= 0 && selected < static_cast<int>(segments.size()))
+            {
+                Segment segment = segments[selected];
+                segment.end = frame;
+                if (segment.start > segment.end)
+                    segment.start = segment.end;
+                setSegment(selected, segment);
+                return;
+            }
+            SegmentMark mark = p.mark->get();
+            mark.hasEnd = true;
+            mark.end = frame;
+            if (!mark.hasStart || mark.start > mark.end)
+            {
+                mark.hasStart = true;
+                mark.start = mark.end;
+            }
+            p.mark->setIfChanged(mark);
+        }
+
+        void TagsModel::clearMark()
+        {
+            _p->mark->setIfChanged(SegmentMark());
         }
 
         void TagsModel::addTag()
@@ -389,10 +447,10 @@ namespace djv
         void TagsModel::addSegment(int tag)
         {
             FTK_P();
-            if (!p.player || tag < 0 || tag >= static_cast<int>(p.tags->get().size()))
+            const SegmentMark mark = p.mark->get();
+            if (!p.player || !mark.hasStart || tag < 0 || tag >= static_cast<int>(p.tags->get().size()))
                 return;
             _pushUndo();
-            const auto inOut = p.inOut->get();
             auto segments = p.segments->get();
             // Names go up in tens, like shot numbers, and are not reused.
             int number = 10;
@@ -407,13 +465,13 @@ namespace djv
             Segment segment;
             segment.name = ftk::Format("sh{0}").arg(number, 3, '0').str();
             segment.tag = tag;
-            segment.start = inOut.first;
-            segment.end = inOut.second;
+            segment.start = mark.start;
+            segment.end = mark.hasEnd ? mark.end : mark.start;
             segments.push_back(segment);
             p.selected->setIfChanged(-1);
             p.segments->setIfChanged(segments);
             _sort();
-            _clearInOut();
+            clearMark();
             _save();
         }
 
@@ -431,17 +489,6 @@ namespace djv
             }
             segments[index] = segment;
             p.segments->setIfChanged(segments);
-            if (index == p.selected->get() && p.player)
-            {
-                p.settingInOut = true;
-                p.player->setInOutRange(OTIO_NS::TimeRange::range_from_start_end_time_inclusive(
-                    OTIO_NS::RationalTime(segment.start, p.rate),
-                    OTIO_NS::RationalTime(segment.end, p.rate)));
-                p.settingInOut = false;
-                // Changing the in and out points drops the player's frame
-                // requests; a seek starts them again, or playback stalls.
-                p.player->seek(p.player->getCurrentTime());
-            }
             _save();
         }
 
@@ -456,7 +503,6 @@ namespace djv
             if (index == p.selected->get())
             {
                 p.selected->setIfChanged(-1);
-                _clearInOut();
             }
             else if (index < p.selected->get())
             {
@@ -479,17 +525,9 @@ namespace djv
                 return;
             if (index >= 0)
             {
-                const Segment& segment = segments[index];
-                p.settingInOut = true;
-                p.player->setInOutRange(OTIO_NS::TimeRange::range_from_start_end_time_inclusive(
-                    OTIO_NS::RationalTime(segment.start, p.rate),
-                    OTIO_NS::RationalTime(segment.end, p.rate)));
-                p.settingInOut = false;
-                p.player->seek(OTIO_NS::RationalTime(segment.start, p.rate));
-            }
-            else
-            {
-                _clearInOut();
+                // Jump to it; the player's in and out points stay as they
+                // are, so playback is never limited to the segment.
+                p.player->seek(OTIO_NS::RationalTime(segments[index].start, p.rate));
             }
         }
 
@@ -516,6 +554,7 @@ namespace djv
             FTK_P();
             p.undo.clear();
             p.selected->setIfChanged(-1);
+            p.mark->setIfChanged(SegmentMark());
             if (p.player)
             {
                 p.path = p.player->getPath();
@@ -534,37 +573,11 @@ namespace djv
                         _p->currentFrame->setIfChanged(
                             static_cast<int64_t>(std::floor(value.rescaled_to(_p->rate).value())));
                     });
-                p.inOutObserver = ftk::Observer<OTIO_NS::TimeRange>::create(
-                    p.player->observeInOutRange(),
-                    [this](const OTIO_NS::TimeRange& value)
-                    {
-                        FTK_P();
-                        const std::pair<int64_t, int64_t> inOut(
-                            static_cast<int64_t>(std::floor(value.start_time().rescaled_to(p.rate).value())),
-                            static_cast<int64_t>(std::floor(value.end_time_inclusive().rescaled_to(p.rate).value())));
-                        p.inOut->setIfChanged(inOut);
-                        // I and O edit the selected segment.
-                        const int selected = p.selected->get();
-                        auto segments = p.segments->get();
-                        if (!p.settingInOut &&
-                            selected >= 0 &&
-                            selected < static_cast<int>(segments.size()) &&
-                            (segments[selected].start != inOut.first ||
-                                segments[selected].end != inOut.second))
-                        {
-                            _pushUndo();
-                            segments[selected].start = inOut.first;
-                            segments[selected].end = inOut.second;
-                            p.segments->setIfChanged(segments);
-                            _save();
-                        }
-                    });
             }
             else
             {
                 p.path = ftk::Path();
                 p.currentTimeObserver.reset();
-                p.inOutObserver.reset();
                 p.hasFile->setIfChanged(false);
                 p.segments->setIfChanged(std::vector<Segment>());
             }
@@ -715,20 +728,6 @@ namespace djv
                     return a.start < b.start;
                 });
             p.segments->setIfChanged(segments);
-        }
-
-        void TagsModel::_clearInOut()
-        {
-            FTK_P();
-            if (p.player)
-            {
-                p.settingInOut = true;
-                p.player->setInOutRange(p.player->getTimeRange());
-                p.settingInOut = false;
-                // Changing the in and out points drops the player's frame
-                // requests; a seek starts them again, or playback stalls.
-                p.player->seek(p.player->getCurrentTime());
-            }
         }
 
         std::string TagsModel::exportNuke()

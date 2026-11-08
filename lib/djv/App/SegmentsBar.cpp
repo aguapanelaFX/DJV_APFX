@@ -20,7 +20,7 @@ namespace djv
             std::vector<Segment> segments;
             int selected = -1;
             std::pair<int64_t, int64_t> range = { 0, 0 };
-            std::pair<int64_t, int64_t> inOut = { 0, 0 };
+            SegmentMark mark;
             int64_t currentFrame = 0;
             int height = 14;
             int border = 1;
@@ -29,7 +29,7 @@ namespace djv
             std::shared_ptr<ftk::Observer<std::vector<Segment> > > segmentsObserver;
             std::shared_ptr<ftk::Observer<int> > selectedObserver;
             std::shared_ptr<ftk::Observer<std::pair<int64_t, int64_t> > > rangeObserver;
-            std::shared_ptr<ftk::Observer<std::pair<int64_t, int64_t> > > inOutObserver;
+            std::shared_ptr<ftk::Observer<SegmentMark> > markObserver;
             std::shared_ptr<ftk::Observer<int64_t> > currentFrameObserver;
             std::shared_ptr<ftk::Observer<bool> > hasFileObserver;
         };
@@ -74,11 +74,11 @@ namespace djv
                     _p->range = value;
                     setDrawUpdate();
                 });
-            p.inOutObserver = ftk::Observer<std::pair<int64_t, int64_t> >::create(
-                model->observeInOut(),
-                [this](const std::pair<int64_t, int64_t>& value)
+            p.markObserver = ftk::Observer<SegmentMark>::create(
+                model->observeMark(),
+                [this](const SegmentMark& value)
                 {
-                    _p->inOut = value;
+                    _p->mark = value;
                     setDrawUpdate();
                 });
             p.currentFrameObserver = ftk::Observer<int64_t>::create(
@@ -144,16 +144,6 @@ namespace djv
             const ftk::Box2I& g = getGeometry();
             event.render->drawRect(g, event.style->getColorRole(ftk::ColorRole::Base));
 
-            // In and out points, when they are not the whole file.
-            if (p.inOut.first != p.range.first || p.inOut.second != p.range.second)
-            {
-                const int x0 = _frameToX(p.inOut.first);
-                const int x1 = _frameToX(p.inOut.second + 1);
-                event.render->drawRect(
-                    ftk::Box2I(x0, g.min.y, std::max(1, x1 - x0), g.h()),
-                    event.style->getColorRole(ftk::ColorRole::Checked));
-            }
-
             const int inset = std::max(1, g.h() / 5);
             for (size_t i = 0; i < p.segments.size(); ++i)
             {
@@ -171,6 +161,22 @@ namespace djv
                         ftk::Color4F(1.F, 1.F, 1.F));
                 }
                 event.render->drawRect(box, color);
+            }
+
+            // The range being marked, not yet on a tag: gray with stripes.
+            if (p.mark.hasStart)
+            {
+                const int x0 = _frameToX(p.mark.start);
+                const int x1 = std::max(x0 + 2, _frameToX((p.mark.hasEnd ? p.mark.end : p.mark.start) + 1));
+                const ftk::Box2I box(x0, g.min.y + inset, x1 - x0, g.h() - inset * 2);
+                event.render->drawRect(box, ftk::Color4F(.45F, .45F, .45F));
+                const int stripe = std::max(2, g.h() / 3);
+                for (int x = box.min.x; x < box.max.x; x += stripe * 2)
+                {
+                    event.render->drawRect(
+                        ftk::Box2I(x, box.min.y, std::min(stripe, box.max.x - x + 1), box.h()),
+                        ftk::Color4F(.65F, .65F, .65F));
+                }
             }
 
             // Current frame.

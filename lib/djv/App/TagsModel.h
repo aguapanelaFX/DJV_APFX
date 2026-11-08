@@ -45,14 +45,26 @@ namespace djv
             bool operator == (const Segment&) const = default;
         };
 
+        //! APFX: the range being marked for a new segment, with its own
+        //! keys ([ and ]), separate from the player's in and out points.
+        struct DJV_APP_API_TYPE SegmentMark
+        {
+            bool    hasStart = false;
+            bool    hasEnd   = false;
+            int64_t start    = 0;
+            int64_t end      = 0;
+
+            bool operator == (const SegmentMark&) const = default;
+        };
+
         //! APFX tags model: the tags and segments of the current file,
         //! saved next to it as "<file>.tags.json", and the exports to
         //! Nuke and SOLVFX.
         //!
-        //! Marking uses the player's in and out points (I and O): adding a
-        //! segment takes them and clears them. Selecting a segment sets the
-        //! in and out points to it, and while it is selected I and O edit
-        //! it.
+        //! Marking has its own start and end ([ and ]), apart from the
+        //! player's in and out points, which the tags never change. Adding
+        //! a segment takes the mark and clears it. While a segment is
+        //! selected, [ and ] edit its start and end.
         class DJV_APP_API_TYPE TagsModel : public std::enable_shared_from_this<TagsModel>
         {
             FTK_NON_COPYABLE(TagsModel);
@@ -83,13 +95,19 @@ namespace djv
             //! for drawing.
             DJV_APP_API std::shared_ptr<ftk::IObservable<std::pair<int64_t, int64_t> > > observeRange() const;
             DJV_APP_API std::shared_ptr<ftk::IObservable<int64_t> > observeCurrentFrame() const;
-            DJV_APP_API std::shared_ptr<ftk::IObservable<std::pair<int64_t, int64_t> > > observeInOut() const;
+            DJV_APP_API std::shared_ptr<ftk::IObservable<SegmentMark> > observeMark() const;
+
+            //! Mark the start or end at the current frame; with a segment
+            //! selected, set its start or end instead.
+            DJV_APP_API void markStart();
+            DJV_APP_API void markEnd();
+            DJV_APP_API void clearMark();
 
             DJV_APP_API void addTag();
             DJV_APP_API void setTag(int, const Tag&);
             DJV_APP_API void removeTag(int);
 
-            //! Add a segment from the in and out points, then clear them.
+            //! Add a segment from the mark, then clear the mark.
             DJV_APP_API void addSegment(int tag);
             DJV_APP_API void setSegment(int, const Segment&);
             DJV_APP_API void removeSegment(int);
@@ -125,7 +143,6 @@ namespace djv
             void _save();
             void _pushUndo();
             void _sort();
-            void _clearInOut();
 
             FTK_PRIVATE();
         };

@@ -1289,12 +1289,26 @@ namespace djv
         void MainWindow::keyPressEvent(ftk::KeyEvent& event)
         {
             FTK_P();
+            auto app = p.app.lock();
+            auto tagsModel = app ? app->getTagsModel() : nullptr;
             if (0 == event.modifiers &&
                 ftk::Key::Escape == event.key &&
                 p.presentMode->get())
             {
                 event.accept = true;
                 setPresentMode(false);
+            }
+            // APFX: [ and ] mark a segment's start and end, apart from I
+            // and O.
+            else if (0 == event.modifiers && ftk::Key::LeftBracket == event.key && tagsModel)
+            {
+                event.accept = true;
+                tagsModel->markStart();
+            }
+            else if (0 == event.modifiers && ftk::Key::RightBracket == event.key && tagsModel)
+            {
+                event.accept = true;
+                tagsModel->markEnd();
             }
             else
             {
