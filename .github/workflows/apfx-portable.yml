@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -120,6 +121,19 @@ jobs:
       with:
         name: DJV_APFX-windows-portable
         path: stage/
+
+    # Keep only this build: delete the earlier runs and their downloads.
+    - name: Delete older builds
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh run list -R "${{ github.repository }}" -w "${{ github.workflow }}" -L 100 \
+          --json databaseId -q '.[].databaseId' | while read id; do
+          if [ "$id" != "${{ github.run_id }}" ]; then
+            gh run delete "$id" -R "${{ github.repository }}" || true
+          fi
+        done
 
     - name: Zip for release
       if: github.ref_type == 'tag'
