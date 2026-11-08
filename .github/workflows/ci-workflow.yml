@@ -2,8 +2,8 @@ name: CI
 
 # Every push; and by hand from the Actions tab, which is how a signed Windows
 # package is made without a release (see the windows-package job).
+# APFX fork: upstream CI only runs by hand; apfx-portable.yml builds the package.
 on:
-  push:
   workflow_dispatch:
     inputs:
       sign:

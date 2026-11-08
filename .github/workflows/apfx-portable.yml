@@ -1,0 +1,127 @@
+# APFX portable Windows build.
+#
+# Builds DJV with the upstream package config, then repacks the ZIP as a
+# portable folder:
+#   DJV_APFX/
+#     portable.txt        -> settings + logs go to DJV_APFX/settings/
+#     bin/djv.exe
+#     bin/ffmpeg.exe      -> full FFmpeg, so mp4/mov (H.264, HEVC, ProRes) play
+#     bin/ffprobe.exe
+#
+# Run it from the Actions tab ("Run workflow"), or push a tag like apfx-1.
+# A tag also publishes the ZIP as a GitHub Release.
+name: APFX Portable (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['apfx-*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        path: djv
+        submodules: recursive
+
+    - name: Restore dependencies
+      id: deps
+      uses: actions/cache/restore@v4
+      with:
+        path: install-Release
+        key: apfx-deps-${{ runner.os }}-Release-package-windows-${{ hashFiles('djv/deps/tlRender/deps/ftk/etc/SuperBuild/**', 'djv/deps/tlRender/etc/SuperBuild/**', 'djv/etc/Config/**', 'djv/etc/Windows/sbuild.bat') }}
+
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - uses: ilammy/setup-nasm@v1
+      if: steps.deps.outputs.cache-hit != 'true'
+    - uses: msys2/setup-msys2@v2
+      if: steps.deps.outputs.cache-hit != 'true'
+      id: msys2
+      with:
+        msystem: MSYS
+        install: diffutils make nasm pkgconf
+
+    - name: Setup environment
+      shell: cmd
+      run: |
+        echo %CD%\install-Release\bin>> %GITHUB_PATH%
+        echo %CD%\install-Release\lib>> %GITHUB_PATH%
+        cmake --version
+
+    - name: Build dependencies
+      if: steps.deps.outputs.cache-hit != 'true'
+      shell: cmd
+      env:
+        SBUILD_STAGES: deps
+        MSYS_INSTALL_PATH: ${{ steps.msys2.outputs.msys2-location }}
+      run: |
+        djv\etc\Windows\sbuild.bat djv Release package-windows
+
+    - name: Save dependencies
+      if: steps.deps.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: install-Release
+        key: ${{ steps.deps.outputs.cache-primary-key }}
+
+    - name: Build
+      shell: cmd
+      env:
+        SBUILD_STAGES: project
+      run: |
+        djv\etc\Windows\sbuild.bat djv Release package-windows
+
+    # ZIP only; the NSIS installer is not needed for a portable build.
+    - name: Package
+      shell: cmd
+      run: |
+        cd build-Release
+        cpack -G ZIP -C Release
+
+    - name: Make portable folder
+      shell: pwsh
+      run: |
+        $zip = Get-ChildItem build-Release -Filter 'djv-*.zip' | Select-Object -First 1
+        if (-not $zip) { Write-Host "::error::No ZIP from CPack"; exit 1 }
+        Expand-Archive $zip.FullName -DestinationPath stage
+        $top = Get-ChildItem stage -Directory | Select-Object -First 1
+        Rename-Item $top.FullName DJV_APFX
+        $root = 'stage\DJV_APFX'
+        $bin = Join-Path $root 'bin'
+        if (-not (Test-Path (Join-Path $bin 'djv.exe'))) { Write-Host "::error::bin\djv.exe missing"; exit 1 }
+
+        "DJV_APFX portable build. Settings and logs are kept in the 'settings' folder next to this file. Delete this file to use %APPDATA% instead." |
+          Set-Content (Join-Path $root 'portable.txt')
+
+        # Full FFmpeg (GPL, essentials build) for the external decode path.
+        Invoke-WebRequest 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile ffmpeg.zip
+        Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
+        $fbin = Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+        Copy-Item $fbin.FullName $bin
+        Copy-Item (Join-Path $fbin.DirectoryName 'ffprobe.exe') $bin
+        $flic = Get-ChildItem ffmpeg -Recurse -Filter LICENSE | Select-Object -First 1
+        if ($flic) { Copy-Item $flic.FullName (Join-Path $root 'FFMPEG_LICENSE.txt') }
+
+        & (Join-Path $bin 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
+        Compress-Archive -Path $root -DestinationPath DJV_APFX-windows-portable.zip
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: DJV_APFX-windows-portable
+        path: DJV_APFX-windows-portable.zip
+
+    - name: Release
+      if: github.ref_type == 'tag'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: DJV_APFX-windows-portable.zip
