@@ -866,6 +866,17 @@ namespace djv
                 activeFiles.push_back(item);
             }
             p.colorModel->setActiveFiles(activeFiles);
+
+            // APFX: every loaded file, for the per file input color spaces.
+            std::vector<std::string> loadedFiles;
+            for (const auto& file : p.files)
+            {
+                if (file)
+                {
+                    loadedFiles.push_back(file->path.get());
+                }
+            }
+            p.colorModel->setLoadedFiles(loadedFiles);
         }
 
         void App::_viewUpdate(const ftk::V2I& pos, double zoom, bool frame)

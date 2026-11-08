@@ -3,6 +3,8 @@
 
 #include <djv/UI/ColorWidgets.h>
 
+#include <djv/UI/ColorSpaceButton.h>
+
 #include <djv/Models/ColorModel.h>
 #include <djv/Models/SettingsKeys.h>
 #include <djv/Models/ViewportModel.h>
@@ -60,19 +62,20 @@ namespace djv
             std::shared_ptr<models::OCIOModel> ocioModel;
             std::map<std::string, std::string> extColorSpaces;
             std::vector<std::string> colorSpaces;
+            std::vector<std::string> colorSpaceFamilies;
             std::vector<std::string> exts;
 
             std::shared_ptr<ftk::CheckBox> enabledCheckBox;
             std::shared_ptr<ftk::ComboBox> configComboBox;
             std::shared_ptr<ftk::FileEdit> fileEdit;
             std::shared_ptr<ftk::Label> nameLabel;
-            std::shared_ptr<ftk::ComboBox> inputComboBox;
+            std::shared_ptr<ColorSpaceButton> inputComboBox;
             std::shared_ptr<ftk::Label> resolvedLabel;
             std::shared_ptr<ftk::ComboBox> displayComboBox;
             std::shared_ptr<ftk::ComboBox> viewComboBox;
             std::shared_ptr<ftk::ComboBox> lookComboBox;
             std::shared_ptr<ftk::ComboBox> extAddExtComboBox;
-            std::shared_ptr<ftk::ComboBox> extAddColorSpaceComboBox;
+            std::shared_ptr<ColorSpaceButton> extAddColorSpaceComboBox;
             std::shared_ptr<ftk::ToolButton> extAddButton;
             std::shared_ptr<ftk::HorizontalLayout> extAddLayout;
             std::vector<std::shared_ptr<ftk::IWidget> > extRows;
@@ -82,11 +85,13 @@ namespace djv
             // APFX: per file input color spaces.
             std::map<std::string, std::string> fileColorSpaces;
             std::vector<std::string> activeFilePaths;
+            std::vector<std::string> loadedFiles;
             std::shared_ptr<ftk::Label> fileTitleLabel;
             std::shared_ptr<ftk::FormLayout> fileLayout;
             std::vector<std::shared_ptr<ftk::IWidget> > fileRows;
             std::shared_ptr<ftk::Observer<std::map<std::string, std::string> > > fileColorSpacesObserver;
             std::shared_ptr<ftk::Observer<std::vector<std::string> > > activeFilePathsObserver;
+            std::shared_ptr<ftk::Observer<std::vector<std::string> > > loadedFilesObserver;
 
             std::shared_ptr<ftk::Observer<tl::OCIOOptions> > optionsObserver;
             std::shared_ptr<ftk::Observer<tl::OCIOOptions> > optionsObserver2;
@@ -119,8 +124,7 @@ namespace djv
             p.nameLabel = ftk::Label::create(context);
             ftk::setScreenshotTag(p.nameLabel, "Color.OCIO.Name");
 
-            p.inputComboBox = ftk::ComboBox::create(context);
-            p.inputComboBox->setHStretch(ftk::Stretch::Expanding);
+            p.inputComboBox = ColorSpaceButton::create(context);
             ftk::setScreenshotTag(p.inputComboBox, "Color.OCIO.Input");
 
             p.resolvedLabel = ftk::Label::create(context);
@@ -174,8 +178,7 @@ namespace djv
                 "File name extension to assign a color space to.");
             ftk::setScreenshotTag(p.extAddExtComboBox, "Color.OCIO.ExtAdd");
 
-            p.extAddColorSpaceComboBox = ftk::ComboBox::create(context);
-            p.extAddColorSpaceComboBox->setHStretch(ftk::Stretch::Expanding);
+            p.extAddColorSpaceComboBox = ColorSpaceButton::create(context);
             p.extAddColorSpaceComboBox->setTooltip(
                 "Color space to assign to the extension.");
 
@@ -216,7 +219,7 @@ namespace djv
 
             // APFX: one input color space per loaded file, like the
             // colorspace of a Nuke Read. "Default" follows the Input above.
-            p.fileTitleLabel = ftk::Label::create(context, "Input per file (A first, then compare files):", p.layout);
+            p.fileTitleLabel = ftk::Label::create(context, "Input per file:", p.layout);
             p.fileLayout = ftk::FormLayout::create(context, p.layout);
             p.fileLayout->setSpacingRole(ftk::SizeRole::SpacingSmall);
 
@@ -225,6 +228,14 @@ namespace djv
                 [this](const std::map<std::string, std::string>& value)
                 {
                     _p->fileColorSpaces = value;
+                    _fileUpdate();
+                });
+
+            p.loadedFilesObserver = ftk::Observer<std::vector<std::string> >::create(
+                colorModel->observeLoadedFiles(),
+                [this](const std::vector<std::string>& value)
+                {
+                    _p->loadedFiles = value;
                     _fileUpdate();
                 });
 
@@ -260,7 +271,7 @@ namespace djv
                     p.fileEdit->setPath(ftk::Path(value.fileName));
                     p.nameLabel->setText(value.name);
                     p.formLayout->setRowVisible(p.fileEdit, tl::OCIOConfig::File == value.config);
-                    p.inputComboBox->setItems(value.inputs);
+                    p.inputComboBox->setItems(value.inputs, value.inputFamilies);
                     p.inputComboBox->setCurrentIndex(value.inputIndex);
                     p.displayComboBox->setItems(value.displays);
                     p.displayComboBox->setCurrentIndex(value.displayIndex);
@@ -271,14 +282,24 @@ namespace djv
                     // The first input is "Automatic", which is not a color
                     // space an extension can be assigned to.
                     std::vector<std::string> colorSpaces;
+                    std::vector<std::string> families;
                     if (!value.inputs.empty())
                     {
                         colorSpaces.assign(value.inputs.begin() + 1, value.inputs.end());
                     }
-                    if (colorSpaces != p.colorSpaces)
+                    if (value.inputFamilies.size() == value.inputs.size() && !value.inputFamilies.empty())
+                    {
+                        families.assign(value.inputFamilies.begin() + 1, value.inputFamilies.end());
+                    }
+                    if (colorSpaces != p.colorSpaces || families != p.colorSpaceFamilies)
                     {
                         p.colorSpaces = colorSpaces;
-                        p.extAddColorSpaceComboBox->setItems(p.colorSpaces);
+                        p.colorSpaceFamilies = families;
+                        p.extAddColorSpaceComboBox->setItems(p.colorSpaces, p.colorSpaceFamilies);
+                        if (p.extAddColorSpaceComboBox->getCurrentIndex() < 0 && !p.colorSpaces.empty())
+                        {
+                            p.extAddColorSpaceComboBox->setCurrentIndex(0);
+                        }
                         _extUpdate();
                         _fileUpdate();
                     }
@@ -403,8 +424,8 @@ namespace djv
                     auto hLayout = ftk::HorizontalLayout::create(context);
                     hLayout->setSpacingRole(ftk::SizeRole::SpacingSmall);
 
-                    auto comboBox = ftk::ComboBox::create(context, p.colorSpaces, hLayout);
-                    comboBox->setHStretch(ftk::Stretch::Expanding);
+                    auto comboBox = ColorSpaceButton::create(context, hLayout);
+                    comboBox->setItems(p.colorSpaces, p.colorSpaceFamilies);
                     const auto j = std::find(p.colorSpaces.begin(), p.colorSpaces.end(), i.second);
                     comboBox->setCurrentIndex(
                         j != p.colorSpaces.end() ? (j - p.colorSpaces.begin()) : -1);
@@ -450,19 +471,32 @@ namespace djv
                 p.fileLayout->removeRow(row);
             }
             p.fileRows.clear();
-            p.fileTitleLabel->setVisible(!p.activeFilePaths.empty());
+            // Every loaded file, so each has its own like a Nuke Read; the
+            // active ones marked A and B.
+            std::vector<std::string> paths = p.loadedFiles;
+            for (const auto& path : p.activeFilePaths)
+            {
+                if (std::find(paths.begin(), paths.end(), path) == paths.end())
+                {
+                    paths.push_back(path);
+                }
+            }
+            p.fileTitleLabel->setVisible(!paths.empty());
             if (auto context = getContext())
             {
                 std::vector<std::string> items;
                 items.push_back("Default");
                 items.insert(items.end(), p.colorSpaces.begin(), p.colorSpaces.end());
-                for (size_t i = 0; i < p.activeFilePaths.size(); ++i)
+                std::vector<std::string> families;
+                families.push_back(std::string());
+                families.insert(families.end(), p.colorSpaceFamilies.begin(), p.colorSpaceFamilies.end());
+                for (size_t i = 0; i < paths.size(); ++i)
                 {
-                    const std::string path = p.activeFilePaths[i];
+                    const std::string path = paths[i];
                     if (path.empty())
                         continue;
-                    auto comboBox = ftk::ComboBox::create(context, items);
-                    comboBox->setHStretch(ftk::Stretch::Expanding);
+                    auto comboBox = ColorSpaceButton::create(context);
+                    comboBox->setItems(items, families);
                     comboBox->setTooltip(ftk::Format(
                         "Input color space for:\n{0}\n\n\"Default\" uses the Input "
                         "setting above.").arg(path));
@@ -489,9 +523,13 @@ namespace djv
                             p.colorModel->setFileColorSpace(path, value);
                         });
                     const std::string name = ftk::Path(path).getFileName();
-                    p.fileLayout->addRow(
-                        ftk::Format("{0} {1}:").arg(0 == i ? "A" : "B").arg(name),
-                        comboBox);
+                    std::string mark;
+                    const auto a = std::find(p.activeFilePaths.begin(), p.activeFilePaths.end(), path);
+                    if (a != p.activeFilePaths.end())
+                    {
+                        mark = a == p.activeFilePaths.begin() ? "(A) " : "(B) ";
+                    }
+                    p.fileLayout->addRow(mark + name + ":", comboBox);
                     p.fileRows.push_back(comboBox);
                 }
             }

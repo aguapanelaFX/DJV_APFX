@@ -26,6 +26,9 @@ namespace djv
             std::string fileName;
             std::string name;
             std::vector<std::string> inputs;
+            //! APFX: the OCIO family of each input ("Input/ARRI"), for
+            //! grouped menus; empty for "Automatic".
+            std::vector<std::string> inputFamilies;
             size_t inputIndex = 0;
             std::vector<std::string> displays;
             size_t displayIndex = 0;

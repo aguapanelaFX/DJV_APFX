@@ -55,6 +55,7 @@ namespace djv
     namespace app
     {
         class MainWindow;
+        class TagsModel;
         class ToolWidgetFactory;
 
         //! Application.
@@ -283,6 +284,9 @@ namespace djv
 
             //! Get the tool widget factory.
             DJV_APP_API const std::shared_ptr<ToolWidgetFactory>& getToolWidgetFactory() const;
+
+            //! APFX: get the tags model.
+            DJV_APP_API const std::shared_ptr<TagsModel>& getTagsModel() const;
 
             //! Create the status indicator.
             DJV_APP_API virtual std::shared_ptr<ui::StatusIndicator> createIndicator();

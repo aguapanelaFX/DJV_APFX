@@ -12,6 +12,8 @@
 #include <djv/App/Capture.h>
 #include <djv/App/ColorPickerTool.h>
 #include <djv/App/ColorTool.h>
+#include <djv/App/TagsModel.h>
+#include <djv/App/TagsTool.h>
 #include <djv/App/DiagTool.h>
 #include <djv/App/ExportTool.h>
 #include <djv/App/FilesTool.h>
@@ -586,6 +588,11 @@ namespace djv
             return _p->toolWidgetFactory;
         }
 
+        const std::shared_ptr<TagsModel>& App::getTagsModel() const
+        {
+            return _p->tagsModel;
+        }
+
         bool App::isSetupReady() const
         {
             return true;
@@ -1122,6 +1129,12 @@ namespace djv
             p.toolWidgetFactory->addTool("Review", &ReviewTool::create);
             p.toolWidgetFactory->addTool("Settings", &SettingsTool::create);
             p.toolWidgetFactory->addTool("System Log", &SysLogTool::create);
+            p.toolWidgetFactory->addTool("Tags", &TagsTool::create);
+
+            // APFX: the tags, before the main window, which draws them.
+            p.tagsModel = TagsModel::create(
+                _context,
+                std::dynamic_pointer_cast<App>(shared_from_this()));
             p.toolWidgetFactory->addTool("View", &ViewTool::create);
         }
 

@@ -38,7 +38,10 @@ set(HEADERS
     SecondaryWindow.h
     SettingsTool.h
     StatusBar.h
+    SegmentsBar.h
     SysLogTool.h
+    TagsModel.h
+    TagsTool.h
     TabBar.h
     TimelineActions.h
     TimelineMenu.h
@@ -101,7 +104,10 @@ set(SOURCE
     SettingsTool.cpp
     ShellAssociations.cpp
     StatusBar.cpp
+    SegmentsBar.cpp
     SysLogTool.cpp
+    TagsModel.cpp
+    TagsTool.cpp
     TabBar.cpp
     TimelineActions.cpp
     TimelineMenu.cpp

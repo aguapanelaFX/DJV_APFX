@@ -111,6 +111,7 @@ namespace djv
             std::shared_ptr<ftk::Observable<std::map<std::string, std::string> > > extColorSpaces;
             std::shared_ptr<ftk::Observable<std::map<std::string, std::string> > > fileColorSpaces;
             std::shared_ptr<ftk::Observable<std::vector<std::string> > > activeFilePaths;
+            std::shared_ptr<ftk::Observable<std::vector<std::string> > > loadedFiles;
             std::vector<std::pair<std::string, ftk::ImageTags> > activeFiles;
             std::shared_ptr<ftk::Observable<std::vector<std::string> > > resolvedInputs;
             // Set beside the resolved options: the input color space and
@@ -165,6 +166,8 @@ namespace djv
             p.settings->getT(settingsKeys::colorOCIOFileColorSpaces, fileColorSpaces);
             p.fileColorSpaces = ftk::Observable<std::map<std::string, std::string> >::create(fileColorSpaces);
             p.activeFilePaths = ftk::Observable<std::vector<std::string> >::create(
+                std::vector<std::string>());
+            p.loadedFiles = ftk::Observable<std::vector<std::string> >::create(
                 std::vector<std::string>());
             p.resolvedOCIOOptions = ftk::Observable<tl::OCIOOptions>::create(
                 _resolvedOCIOOptions());
@@ -322,6 +325,16 @@ namespace djv
         std::shared_ptr<ftk::IObservable<std::vector<std::string> > > ColorModel::observeActiveFilePaths() const
         {
             return _p->activeFilePaths;
+        }
+
+        void ColorModel::setLoadedFiles(const std::vector<std::string>& value)
+        {
+            _p->loadedFiles->setIfChanged(value);
+        }
+
+        std::shared_ptr<ftk::IObservable<std::vector<std::string> > > ColorModel::observeLoadedFiles() const
+        {
+            return _p->loadedFiles;
         }
 
         std::string ColorModel::resolveLayerInput(

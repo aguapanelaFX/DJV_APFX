@@ -258,9 +258,26 @@ namespace djv
                 // resolved automatically -- extension assignments, then what
                 // the file declares, then the configuration's file rules.
                 out.inputs.push_back("Automatic");
+                out.inputFamilies.push_back(std::string());
+                const char separator = p.ocioConfig->getFamilySeparator();
                 for (int i = 0; i < p.ocioConfig->getNumColorSpaces(); ++i)
                 {
-                    out.inputs.push_back(p.ocioConfig->getColorSpaceNameByIndex(i));
+                    const char* name = p.ocioConfig->getColorSpaceNameByIndex(i);
+                    out.inputs.push_back(name);
+                    std::string family;
+                    if (auto cs = p.ocioConfig->getColorSpace(name))
+                    {
+                        family = cs->getFamily() ? cs->getFamily() : "";
+                        if (separator && separator != '/')
+                        {
+                            for (auto& c : family)
+                            {
+                                if (c == separator)
+                                    c = '/';
+                            }
+                        }
+                    }
+                    out.inputFamilies.push_back(family);
                 }
                 auto j = std::find(out.inputs.begin(), out.inputs.end(), options.input);
                 if (j != out.inputs.end())

@@ -1,6 +1,7 @@
 set(HEADERS
     AboutDialog.h
     AudioPopup.h
+    ColorSpaceButton.h
     ColorWidgets.h
     FileThumbnail.h
     FrameRangePopup.h
@@ -27,6 +28,7 @@ set(HEADERS_PRIVATE)
 set(SOURCE
     AboutDialog.cpp
     AudioPopup.cpp
+    ColorSpaceButton.cpp
     ColorWidgets.cpp
     FileThumbnail.cpp
     FrameRangePopup.cpp

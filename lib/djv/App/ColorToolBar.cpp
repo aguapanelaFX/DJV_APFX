@@ -48,6 +48,7 @@ namespace djv
 
             auto colorModel = app->getColorModel();
             auto viewportModel = app->getViewportModel();
+            std::weak_ptr<models::ViewportModel> viewportModelWeak(viewportModel);
             p.ocioModel = models::OCIOModel::create(context);
 
             p.ocioCheckBox = ftk::CheckBox::create(context, "ACES");
@@ -90,13 +91,55 @@ namespace djv
             p.displayComboBox->setParent(p.layout);
             ftk::Label::create(context, "View:", p.layout);
             p.viewComboBox->setParent(p.layout);
-            ftk::Label::create(context, "Exposure:", p.layout);
+            {
+                // Click the name to reset, like a Nuke knob label.
+                auto label = ftk::ToolButton::create(context, "Exposure:", p.layout);
+                label->setTooltip("Click to reset.");
+                label->setClickedCallback(
+                    [viewportModelWeak]
+                    {
+                        if (auto viewportModel = viewportModelWeak.lock())
+                        {
+                            auto options = viewportModel->getDisplayOptions();
+                            options.exposure.exposure = 0.F;
+                            viewportModel->setDisplayOptions(options);
+                        }
+                    });
+            }
             p.exposureSlider->setParent(p.layout);
             p.exposureSlider->setHStretch(ftk::Stretch::Expanding);
-            ftk::Label::create(context, "Gamma:", p.layout);
+            {
+                // Click the name to reset, like a Nuke knob label.
+                auto label = ftk::ToolButton::create(context, "Gamma:", p.layout);
+                label->setTooltip("Click to reset.");
+                label->setClickedCallback(
+                    [viewportModelWeak]
+                    {
+                        if (auto viewportModel = viewportModelWeak.lock())
+                        {
+                            auto options = viewportModel->getDisplayOptions();
+                            options.levels.gamma = 1.F;
+                            viewportModel->setDisplayOptions(options);
+                        }
+                    });
+            }
             p.gammaSlider->setParent(p.layout);
             p.gammaSlider->setHStretch(ftk::Stretch::Expanding);
-            ftk::Label::create(context, "Saturation:", p.layout);
+            {
+                // Click the name to reset, like a Nuke knob label.
+                auto label = ftk::ToolButton::create(context, "Saturation:", p.layout);
+                label->setTooltip("Click to reset.");
+                label->setClickedCallback(
+                    [viewportModelWeak]
+                    {
+                        if (auto viewportModel = viewportModelWeak.lock())
+                        {
+                            auto options = viewportModel->getDisplayOptions();
+                            options.color.saturation = ftk::V3F(1.F, 1.F, 1.F);
+                            viewportModel->setDisplayOptions(options);
+                        }
+                    });
+            }
             p.saturationSlider->setParent(p.layout);
             p.saturationSlider->setHStretch(ftk::Stretch::Expanding);
             p.resetButton->setParent(p.layout);
@@ -157,7 +200,6 @@ namespace djv
                     p.gammaSlider->setValue(value.levels.gamma);
                     p.saturationSlider->setValue(value.color.saturation.x);
                 });
-            std::weak_ptr<models::ViewportModel> viewportModelWeak(viewportModel);
             p.exposureSlider->setCallback(
                 [viewportModelWeak](float value)
                 {

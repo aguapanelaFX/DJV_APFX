@@ -123,6 +123,12 @@ namespace djv
             //! first and then the compare files.
             DJV_MODELS_API std::shared_ptr<ftk::IObservable<std::vector<std::string> > > observeActiveFilePaths() const;
 
+            //! APFX: set the paths of every loaded file.
+            DJV_MODELS_API void setLoadedFiles(const std::vector<std::string>&);
+
+            //! APFX: observe the paths of every loaded file.
+            DJV_MODELS_API std::shared_ptr<ftk::IObservable<std::vector<std::string> > > observeLoadedFiles() const;
+
             //! APFX: the input color space for a layer the render draws:
             //! the file's own, then the automatic resolution when the
             //! settings' input is automatic, otherwise empty (the settings'

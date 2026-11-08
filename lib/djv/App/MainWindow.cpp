@@ -15,6 +15,8 @@
 #include <djv/App/CompareActions.h>
 #include <djv/App/CompareMenu.h>
 #include <djv/App/ColorToolBar.h>
+#include <djv/App/SegmentsBar.h>
+#include <djv/App/TagsModel.h>
 #include <djv/App/CompareToolBar.h>
 #include <djv/App/FileActions.h>
 #include <djv/App/FileMenu.h>
@@ -439,6 +441,12 @@ namespace djv
             vLayout->setSpacingRole(ftk::SizeRole::None);
             p.tabBar->setParent(vLayout);
             p.viewport->setParent(vLayout);
+            // APFX: the tagged segments, between the viewer and the
+            // timeline.
+            if (auto tagsModel = app->getTagsModel())
+            {
+                SegmentsBar::create(context, tagsModel, vLayout);
+            }
             p.toolsWidget->setParent(p.splitter2);
             p.timelineWidget->setParent(p.splitter);
             p.bottomToolBar->setParent(p.layout);

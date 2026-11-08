@@ -154,6 +154,7 @@ namespace djv
 
             std::shared_ptr<ftk::Observable<bool> > secondaryWindowActive;
             std::shared_ptr<ToolWidgetFactory> toolWidgetFactory;
+            std::shared_ptr<TagsModel> tagsModel;
             std::shared_ptr<MainWindow> mainWindow;
             std::shared_ptr<SecondaryWindow> secondaryWindow;
             std::shared_ptr<ui::SeparateAudioDialog> separateAudioDialog;

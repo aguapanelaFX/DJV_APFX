@@ -113,12 +113,19 @@ jobs:
         if ($flic) { Copy-Item $flic.FullName (Join-Path $root 'FFMPEG_LICENSE.txt') }
 
         & (Join-Path $bin 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
-        Compress-Archive -Path $root -DestinationPath DJV_APFX-windows-portable.zip
 
+    # The folder itself: GitHub zips the artifact once, so the download is
+    # one zip with DJV_APFX inside.
     - uses: actions/upload-artifact@v4
       with:
         name: DJV_APFX-windows-portable
-        path: DJV_APFX-windows-portable.zip
+        path: stage/
+
+    - name: Zip for release
+      if: github.ref_type == 'tag'
+      shell: pwsh
+      run: |
+        Compress-Archive -Path stage\DJV_APFX -DestinationPath DJV_APFX-windows-portable.zip
 
     - name: Release
       if: github.ref_type == 'tag'
