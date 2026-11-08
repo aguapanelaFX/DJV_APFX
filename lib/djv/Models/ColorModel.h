@@ -149,6 +149,7 @@ namespace djv
         private:
             std::string _fileColorSpace(const std::string& path) const;
             void _resolvedUpdate();
+            void _defaultExtColorSpaces();
             tl::OCIOOptions _resolvedOCIOOptions();
             void _logInput(const std::string& path, const std::string& label) const;
             std::string _resolveInput(

@@ -165,6 +165,7 @@ namespace djv
             std::map<std::string, std::string> fileColorSpaces;
             p.settings->getT(settingsKeys::colorOCIOFileColorSpaces, fileColorSpaces);
             p.fileColorSpaces = ftk::Observable<std::map<std::string, std::string> >::create(fileColorSpaces);
+            _defaultExtColorSpaces();
             p.activeFilePaths = ftk::Observable<std::vector<std::string> >::create(
                 std::vector<std::string>());
             p.loadedFiles = ftk::Observable<std::vector<std::string> >::create(
@@ -266,6 +267,7 @@ namespace djv
             if (configChanged)
             {
                 _ocioConfigUpdate(options);
+                _defaultExtColorSpaces();
             }
             _resolvedUpdate();
         }
@@ -804,6 +806,62 @@ namespace djv
             }
 #endif // TLRENDER_OCIO
             return out;
+        }
+
+        void ColorModel::_defaultExtColorSpaces()
+        {
+            FTK_P();
+#if defined(TLRENDER_OCIO)
+            // APFX: extension rules to start from, like a Nuke Read's
+            // defaults: movies are Rec.709 display, EXRs ACEScg, PNGs and
+            // JPEGs sRGB display. The names differ between configurations,
+            // so the first one the current configuration has is used. Only
+            // extensions without a working rule of their own get one.
+            if (!p.ocioConfig || !p.extColorSpaces)
+                return;
+            const std::vector<std::string> rec709 =
+            {
+                "Output - Rec.709", "Rec.1886 Rec.709 - Display", "Rec.709 - Display", "rec709_display"
+            };
+            const std::vector<std::string> acescg =
+            {
+                "ACES - ACEScg", "ACEScg", "acescg"
+            };
+            const std::vector<std::string> srgb =
+            {
+                "Output - sRGB", "sRGB - Display", "srgb_display", "sRGB Encoded Rec.709 (sRGB)"
+            };
+            const std::vector<std::pair<std::string, const std::vector<std::string>*> > defaults =
+            {
+                { ".mov", &rec709 },
+                { ".mp4", &rec709 },
+                { ".m4v", &rec709 },
+                { ".exr", &acescg },
+                { ".png", &srgb },
+                { ".jpg", &srgb },
+                { ".jpeg", &srgb }
+            };
+            auto value = p.extColorSpaces->get();
+            for (const auto& d : defaults)
+            {
+                const auto i = value.find(d.first);
+                if (i != value.end() &&
+                    !i->second.empty() &&
+                    p.ocioConfig->getColorSpace(i->second.c_str()))
+                {
+                    continue;
+                }
+                for (const auto& name : *d.second)
+                {
+                    if (auto cs = p.ocioConfig->getColorSpace(name.c_str()))
+                    {
+                        value[d.first] = cs->getName();
+                        break;
+                    }
+                }
+            }
+            p.extColorSpaces->setIfChanged(value);
+#endif // TLRENDER_OCIO
         }
 
         void ColorModel::_ocioConfigUpdate(const tl::OCIOOptions& options)
