@@ -604,6 +604,20 @@ namespace djv
                 return ftk::toFileSystem(out);
             }
 
+            //! Add the extension when the name chosen has none of its own.
+            std::string withExt(const std::string& path, const std::string& ext)
+            {
+                if (path.size() >= ext.size())
+                {
+                    std::string tail = path.substr(path.size() - ext.size());
+                    for (auto& c : tail)
+                        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if (tail == ext)
+                        return path;
+                }
+                return path + ext;
+            }
+
             //! The file's name without the frame number or extension, for
             //! naming exports.
             std::string exportBase(const ftk::Path& path)
@@ -732,7 +746,13 @@ namespace djv
             p.segments->setIfChanged(segments);
         }
 
-        std::string TagsModel::exportNuke()
+        std::string TagsModel::getExportPath(const std::string& suffix) const
+        {
+            FTK_P();
+            return p.path.isEmpty() ? std::string() : exportBase(p.path) + suffix;
+        }
+
+        std::string TagsModel::exportNuke(const std::string& path)
         {
             FTK_P();
             if (p.path.isEmpty())
@@ -760,7 +780,7 @@ namespace djv
             file = forwardSlashes(file);
             const int64_t first = range.first + offset;
             const int64_t last = range.second + offset;
-            const std::string outPath = exportBase(p.path) + "_tags.nk";
+            const std::string outPath = withExt(path.empty() ? exportBase(p.path) + "_tags.nk" : path, ".nk");
 
             std::stringstream ss;
             ss << "#! Nuke script written by DJV_APFX\n";
@@ -819,7 +839,7 @@ namespace djv
             return outPath;
         }
 
-        std::string TagsModel::exportSOLVFX()
+        std::string TagsModel::exportSOLVFX(const std::string& path)
         {
             FTK_P();
             if (p.path.isEmpty())
@@ -842,8 +862,9 @@ namespace djv
             }
             file = forwardSlashes(file);
             const std::string base = exportBase(p.path);
-            const std::string pyPath = base + "_solvfx.py";
-            const std::string solvPath = forwardSlashes(base + "_tags.solv");
+            const std::string pyPath = withExt(path.empty() ? base + "_solvfx.py" : path, ".py");
+            // The project is saved next to the script, with the same name.
+            const std::string solvPath = forwardSlashes(pyPath.substr(0, pyPath.size() - 3) + ".solv");
 
             std::stringstream ss;
             ss << "# SOLVFX project from DJV_APFX tags.\n";
@@ -937,7 +958,7 @@ except Exception:
             return pyPath;
         }
 
-        std::string TagsModel::exportEDL(bool markers)
+        std::string TagsModel::exportEDL(bool markers, const std::string& path)
         {
             FTK_P();
             if (p.path.isEmpty())
@@ -952,7 +973,7 @@ except Exception:
             // with the editor's cut; one without timecode at 01:00:00:00.
             const int64_t recStart = markers && range.first > 0 ? range.first : 3600LL * base;
             const std::string clipName = p.path.getFileName();
-            const std::string outPath = exportBase(p.path) + (markers ? "_markers.edl" : "_cuts.edl");
+            const std::string outPath = withExt(path.empty() ? exportBase(p.path) + (markers ? "_markers.edl" : "_cuts.edl") : path, ".edl");
 
             auto tagOf = [&tags](const Segment& s)
             {
@@ -1025,7 +1046,7 @@ except Exception:
             return outPath;
         }
 
-        std::string TagsModel::exportXML(bool markers)
+        std::string TagsModel::exportXML(bool markers, const std::string& path)
         {
             FTK_P();
             if (p.path.isEmpty())
@@ -1036,7 +1057,7 @@ except Exception:
             const auto tb = timebase(p.rate);
             const int64_t duration = range.second - range.first + 1;
             const std::string clipName = p.path.getFileName();
-            const std::string outPath = exportBase(p.path) + (markers ? "_markers.xml" : "_cuts.xml");
+            const std::string outPath = withExt(path.empty() ? exportBase(p.path) + (markers ? "_markers.xml" : "_cuts.xml") : path, ".xml");
             const std::string seqName = ftk::Path(outPath).getBase();
 
             auto tagOf = [&tags](const Segment& s)

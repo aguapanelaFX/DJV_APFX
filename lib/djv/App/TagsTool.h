@@ -6,6 +6,9 @@
 #include <djv/App/Export.h>
 #include <djv/App/IToolWidget.h>
 
+#include <functional>
+#include <string>
+
 namespace djv
 {
     namespace app
@@ -41,6 +44,12 @@ namespace djv
             void _tagsRebuild();
             void _segmentsRebuild();
             void _markLabelUpdate();
+            void _saveDialog(
+                const std::string& title,
+                const std::string& defaultPath,
+                const std::string& ext,
+                const std::string& label,
+                const std::function<std::string(const std::string&)>& exportFnc);
 
             FTK_PRIVATE();
         };

@@ -8,6 +8,7 @@
 
 #include <ftk/UI/Action.h>
 #include <ftk/UI/ColorSwatch.h>
+#include <ftk/UI/FileBrowser.h>
 #include <ftk/UI/Menu.h>
 #include <ftk/UI/ComboBox.h>
 #include <ftk/UI/Divider.h>
@@ -17,7 +18,9 @@
 #include <ftk/UI/PushButton.h>
 #include <ftk/UI/RowLayout.h>
 #include <ftk/UI/ToolButton.h>
+#include <ftk/Core/Context.h>
 #include <ftk/Core/Format.h>
+#include <ftk/Core/Path.h>
 
 namespace djv
 {
@@ -157,18 +160,30 @@ namespace djv
             p.nukeButton->setClickedCallback(
                 [this]
                 {
-                    _p->exportLabel->setText(_p->model->exportNuke());
+                    auto model = _p->model;
+                    _saveDialog(
+                        "Export Nuke Script",
+                        model->getExportPath("_tags.nk"),
+                        ".nk",
+                        "Nuke Script",
+                        [model](const std::string& path) { return model->exportNuke(path); });
                 });
             p.solvfxButton->setClickedCallback(
                 [this]
                 {
-                    _p->exportLabel->setText(_p->model->exportSOLVFX());
+                    auto model = _p->model;
+                    _saveDialog(
+                        "Export SOLVFX Script",
+                        model->getExportPath("_solvfx.py"),
+                        ".py",
+                        "SOLVFX Python Script",
+                        [model](const std::string& path) { return model->exportSOLVFX(path); });
                 });
 
             // Cuts or markers, asked in a menu under the button.
             auto askCutsOrMarkers = [this](
                 const std::shared_ptr<ftk::PushButton>& button,
-                const std::function<std::string(bool)>& exportFnc)
+                const std::function<void(bool)>& exportFnc)
             {
                 FTK_P();
                 auto context = getContext();
@@ -182,15 +197,15 @@ namespace djv
                 p.menu = ftk::Menu::create(context);
                 p.menu->addAction(ftk::Action::create(
                     "As cuts (only the tagged shots)",
-                    [this, exportFnc]
+                    [exportFnc]
                     {
-                        _p->exportLabel->setText(exportFnc(false));
+                        exportFnc(false);
                     }));
                 p.menu->addAction(ftk::Action::create(
                     "As markers (whole cut, a marker per shot)",
-                    [this, exportFnc]
+                    [exportFnc]
                     {
-                        _p->exportLabel->setText(exportFnc(true));
+                        exportFnc(true);
                     }));
                 p.menu->setCloseCallback(
                     [this]
@@ -205,7 +220,15 @@ namespace djv
                     auto model = _p->model;
                     askCutsOrMarkers(
                         _p->edlButton,
-                        [model](bool markers) { return model->exportEDL(markers); });
+                        [this, model](bool markers)
+                        {
+                            _saveDialog(
+                                "Export EDL",
+                                model->getExportPath(markers ? "_markers.edl" : "_cuts.edl"),
+                                ".edl",
+                                "EDL",
+                                [model, markers](const std::string& path) { return model->exportEDL(markers, path); });
+                        });
                 });
             p.xmlButton->setClickedCallback(
                 [this, askCutsOrMarkers]
@@ -213,7 +236,15 @@ namespace djv
                     auto model = _p->model;
                     askCutsOrMarkers(
                         _p->xmlButton,
-                        [model](bool markers) { return model->exportXML(markers); });
+                        [this, model](bool markers)
+                        {
+                            _saveDialog(
+                                "Export XML",
+                                model->getExportPath(markers ? "_markers.xml" : "_cuts.xml"),
+                                ".xml",
+                                "Final Cut Pro XML",
+                                [model, markers](const std::string& path) { return model->exportXML(markers, path); });
+                        });
                 });
 
             p.tagsObserver = ftk::Observer<std::vector<Tag> >::create(
@@ -314,6 +345,45 @@ namespace djv
                 _segmentsRebuild();
                 _markLabelUpdate();
             }
+        }
+
+        void TagsTool::_saveDialog(
+            const std::string& title,
+            const std::string& defaultPath,
+            const std::string& ext,
+            const std::string& label,
+            const std::function<std::string(const std::string&)>& exportFnc)
+        {
+            FTK_P();
+            auto context = getContext();
+            if (!context || defaultPath.empty())
+                return;
+            // The system's own save dialog (every drive), starting in the
+            // media's folder with the suggested name.
+            auto fileBrowserSystem = context->getSystem<ftk::FileBrowserSystem>();
+            const std::filesystem::path suggested = ftk::toFileSystem(defaultPath);
+            ftk::FileBrowserOpenOptions options;
+            options.title = title;
+            options.path = suggested.parent_path();
+            options.mode = ftk::FileBrowserMode::Save;
+            options.fileName = ftk::fromFileSystem(suggested.filename());
+            options.extensions = { ext };
+            options.extensionsLabel = label;
+            std::weak_ptr<TagsTool> weak(std::dynamic_pointer_cast<TagsTool>(shared_from_this()));
+            fileBrowserSystem->open(
+                getWindow(),
+                [weak, exportFnc](const ftk::Path& value)
+                {
+                    const std::string path = value.get();
+                    if (path.empty())
+                        return;
+                    const std::string result = exportFnc(path);
+                    if (auto widget = weak.lock())
+                    {
+                        widget->_p->exportLabel->setText(result);
+                    }
+                },
+                options);
         }
 
         void TagsTool::_markLabelUpdate()

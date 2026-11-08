@@ -119,24 +119,29 @@ namespace djv
             DJV_APP_API bool canUndo() const;
             DJV_APP_API void undo();
 
+            //! The default export path: the file's folder and name plus the
+            //! suffix ("_tags.nk"). The exports below write there when given
+            //! no path of their own.
+            DJV_APP_API std::string getExportPath(const std::string& suffix) const;
+
             //! Export a Nuke script next to the file; returns its path, or
             //! an error starting with "Error:".
-            DJV_APP_API std::string exportNuke();
+            DJV_APP_API std::string exportNuke(const std::string& path = std::string());
 
             //! Export a SOLVFX (NatronEngine) Python script next to the
             //! file; returns its path, or an error starting with "Error:".
-            DJV_APP_API std::string exportSOLVFX();
+            DJV_APP_API std::string exportSOLVFX(const std::string& path = std::string());
 
             //! Export a CMX 3600 EDL next to the file, as cuts (one event
             //! per segment) or as markers (the whole file with a locator
             //! per segment). Returns its path, or an error starting with
             //! "Error:".
-            DJV_APP_API std::string exportEDL(bool markers);
+            DJV_APP_API std::string exportEDL(bool markers, const std::string& path = std::string());
 
             //! Export a Final Cut Pro 7 XML (Premiere, Resolve) next to the
             //! file, as cuts or as markers. Returns its path, or an error
             //! starting with "Error:".
-            DJV_APP_API std::string exportXML(bool markers);
+            DJV_APP_API std::string exportXML(bool markers, const std::string& path = std::string());
 
         private:
             void _playerUpdate();
