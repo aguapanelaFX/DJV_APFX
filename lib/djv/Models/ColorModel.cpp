@@ -578,47 +578,49 @@ namespace djv
             // comes first, like the colorspace of a Nuke Read.
             const std::string fileColorSpace = _fileColorSpace(path);
 
-            // The user's own extension assignments come before what the
-            // file says and before the configuration's rules: they are set
-            // from inside DJV, so they are the most deliberate of the
-            // three.
+            // APFX: what the file says about itself (the colorspace a Nuke
+            // Write stamps in the metadata) comes before the extension
+            // rules, so the rules only fill in for files that say nothing.
             const auto& extColorSpaces = p.extColorSpaces->get();
             const auto i = extColorSpaces.find(ext);
+            const bool hasExt = i != extColorSpaces.end() && !i->second.empty();
+            bool declaredUnmatched = false;
+            std::string declaredName;
+            const std::string declared = fileColorSpace.empty() ?
+                _declaredColorSpace(tags, declaredUnmatched, declaredName) :
+                std::string();
             if (!fileColorSpace.empty())
             {
                 out = fileColorSpace;
                 source = "file";
             }
-            else if (i != extColorSpaces.end() && !i->second.empty())
+            else if (!declared.empty())
             {
+                out = declared;
+                source = "metadata";
+            }
+            else if (hasExt)
+            {
+                // Also where the file names a color space the configuration
+                // does not have: the user's rule is a better answer than
+                // showing it unmanaged.
                 out = i->second;
                 source = "extension";
             }
-            else if (bool declaredUnmatched = false; true)
+            else if (true)
             {
-                std::string declaredName;
-                const std::string declared = _declaredColorSpace(
-                    tags, declaredUnmatched, declaredName);
-                if (!declared.empty())
-                {
-                    out = declared;
-                    source = "file";
-                }
-                else if (declaredUnmatched)
+                if (declaredUnmatched)
                 {
                     // The file said what it is and the configuration cannot
-                    // name it. Guessing from the extension rules here would
-                    // dress a wrong answer as a resolution -- an XYZ or
-                    // E-Gamut EXR shown as ACES2065-1 -- so nothing resolves
-                    // and the image is shown unmanaged. The label says so,
-                    // where a resolution would be shown.
+                    // name it, and there is no rule for the extension:
+                    // nothing resolves and the image is shown unmanaged.
                     if (label)
                     {
                         *label = declaredName + " (not in the configuration)";
                     }
                     return out;
                 }
-                else if (p.ocioConfig)
+                if (p.ocioConfig)
                 {
                 // A file that says nothing is what the configuration says it
                 // is. Its file rules are taken whole, the default rule
