@@ -644,6 +644,7 @@ namespace djv
                         segment.tag = j.at("tag").get<int>();
                         segment.start = j.at("start").get<int64_t>();
                         segment.end = j.at("end").get<int64_t>();
+                        segment.note = j.value("note", std::string());
                         segments.push_back(segment);
                     }
                     if (!tags.empty())
@@ -689,7 +690,8 @@ namespace djv
                         { "name", segment.name },
                         { "tag", segment.tag },
                         { "start", segment.start },
-                        { "end", segment.end } });
+                        { "end", segment.end },
+                        { "note", segment.note } });
                 }
                 std::ofstream file(sidecarPath(p.path));
                 file << json.dump(2);
@@ -780,6 +782,16 @@ namespace djv
                 ss << " xpos " << (static_cast<int>(i) * step - 60) << "\n ypos 120\n";
                 ss << " bdwidth 240\n bdheight 260\n}\n";
             }
+            for (size_t i = 0; i < segments.size(); ++i)
+            {
+                const Segment& s = segments[i];
+                if (s.note.empty())
+                    continue;
+                ss << "StickyNote {\n inputs 0\n name " << scriptName(s.name + "_note") << "\n";
+                ss << " label " << quoted(s.note) << "\n";
+                ss << " note_font_size 14\n";
+                ss << " xpos " << (static_cast<int>(i) * step - 50) << "\n ypos 330\n}\n";
+            }
             ss << "Read {\n inputs 0\n file " << quoted(file) << "\n";
             ss << " first " << first << "\n last " << last << "\n";
             ss << " origfirst " << first << "\n origlast " << last << "\n origset true\n";
@@ -845,14 +857,15 @@ namespace djv
             ss << "FPS = " << p.rate << "\n";
             ss << "ANCHOR_LABEL = \"main footage\"\n";
             ss << "STEP = 300\n\n";
-            ss << "SHOTS = [  # (script name, label, first, last, (r, g, b))\n";
+            ss << "SHOTS = [  # (script name, label, first, last, (r, g, b), note)\n";
             for (const auto& s : segments)
             {
                 const Tag tag = s.tag >= 0 && s.tag < static_cast<int>(tags.size()) ? tags[s.tag] : Tag();
                 ss << "    (" << quoted(scriptName(s.name)) << ", "
                     << quoted(s.name + " - " + tag.name) << ", "
                     << (s.start + offset) << ", " << (s.end + offset) << ", ("
-                    << tag.color.r << ", " << tag.color.g << ", " << tag.color.b << ")),\n";
+                    << tag.color.r << ", " << tag.color.g << ", " << tag.color.b << "), "
+                    << quoted(s.note) << "),\n";
             }
             ss << "]\n\n";
             ss << R"PY(def backdrop_label(text, size=30):
@@ -878,7 +891,7 @@ anchor.setLabel(ANCHOR_LABEL)
 anchor.connectInput(0, dot)
 anchor.setPosition(0, 230)
 
-for i, (name, label, first, last, color) in enumerate(SHOTS):
+for i, (name, label, first, last, color, note) in enumerate(SHOTS):
     x = i * STEP
     stamp = app.createNode("com.aguapanelafx.solvfx.Stamp")
     stamp.setScriptName(name + "_stamp")
@@ -899,6 +912,15 @@ for i, (name, label, first, last, color) in enumerate(SHOTS):
     bd.setColor(color[0], color[1], color[2])
     bd.setPosition(x - 50, 440)
     bd.setSize(240, 300)
+
+    # The note: no sticky notes in SOLVFX yet, so a small backdrop below.
+    if note:
+        nbd = app.createNode("fr.inria.built-in.BackDrop")
+        nbd.setScriptName(name + "_note")
+        nbd.getParam("Label").setValue(backdrop_label(note, 5))
+        nbd.setColor(0.25, 0.25, 0.25)
+        nbd.setPosition(x - 50, 760)
+        nbd.setSize(240, 80)
 
 app.saveProjectAs(OUT)
 try:
@@ -957,7 +979,14 @@ except Exception:
                     const Tag tag = tagOf(s);
                     ss << "* LOC: " << timecode(recStart + s.start - range.first, base) << " "
                         << locatorColor(tag.color) << "  " << s.name << " " << tag.name << " ("
-                        << (s.end - s.start + 1) << " frames)\r\n";
+                        << (s.end - s.start + 1) << " frames)";
+                    if (!s.note.empty())
+                    {
+                        std::string note = s.note;
+                        std::replace(note.begin(), note.end(), '\n', ' ');
+                        ss << " - " << note;
+                    }
+                    ss << "\r\n";
                 }
             }
             else
@@ -977,7 +1006,14 @@ except Exception:
                         timecode(rec + out - in, base).c_str());
                     ss << buf;
                     ss << "* FROM CLIP NAME: " << clipName << "\r\n";
-                    ss << "* COMMENT: " << s.name << " " << tag.name << "\r\n\r\n";
+                    ss << "* COMMENT: " << s.name << " " << tag.name << "\r\n";
+                    if (!s.note.empty())
+                    {
+                        std::string note = s.note;
+                        std::replace(note.begin(), note.end(), '\n', ' ');
+                        ss << "* NOTE: " << note << "\r\n";
+                    }
+                    ss << "\r\n";
                     rec += out - in;
                 }
             }
@@ -1033,7 +1069,7 @@ except Exception:
                 return f.str();
             };
             auto clipItem = [&](int id, const std::string& name, int64_t start, int64_t end,
-                int64_t in, int64_t out, const std::string& label)
+                int64_t in, int64_t out, const std::string& label, const std::string& note)
             {
                 std::stringstream c;
                 c << "<clipitem id=\"clipitem-" << id << "\"><name>" << xmlEscape(name) << "</name>"
@@ -1045,6 +1081,10 @@ except Exception:
                 {
                     c << "<labels><label2>" << label << "</label2></labels>";
                 }
+                if (!note.empty())
+                {
+                    c << "<comments><mastercomment1>" << xmlEscape(note) << "</mastercomment1></comments>";
+                }
                 c << "</clipitem>\n";
                 return c.str();
             };
@@ -1054,13 +1094,13 @@ except Exception:
             int64_t sequenceDuration = 0;
             if (markers)
             {
-                items << clipItem(1, clipName, 0, duration, 0, duration, std::string());
+                items << clipItem(1, clipName, 0, duration, 0, duration, std::string(), std::string());
                 sequenceDuration = duration;
                 for (const auto& s : segments)
                 {
                     const Tag tag = tagOf(s);
                     sequenceMarkers << "<marker><name>" << xmlEscape(s.name) << "</name>"
-                        << "<comment>" << xmlEscape(tag.name) << "</comment>"
+                        << "<comment>" << xmlEscape(s.note.empty() ? tag.name : tag.name + ": " + s.note) << "</comment>"
                         << "<in>" << (s.start - range.first) << "</in>"
                         << "<out>" << (s.end - range.first + 1) << "</out></marker>\n";
                 }
@@ -1080,7 +1120,8 @@ except Exception:
                         sequenceDuration + out - in,
                         in,
                         out,
-                        premiereLabel(tag.color));
+                        premiereLabel(tag.color),
+                        s.note);
                     sequenceDuration += out - in;
                 }
             }

@@ -40,9 +40,11 @@ namespace djv
             DJV_APP_API void sizeHintEvent(const ftk::SizeHintEvent&) override;
             DJV_APP_API void drawEvent(const ftk::Box2I&, const ftk::DrawEvent&) override;
             DJV_APP_API void mousePressEvent(ftk::MouseClickEvent&) override;
+            DJV_APP_API void mouseMoveEvent(ftk::MouseMoveEvent&) override;
 
         private:
             int _frameToX(int64_t) const;
+            int _hit(int x) const;
 
             FTK_PRIVATE();
         };

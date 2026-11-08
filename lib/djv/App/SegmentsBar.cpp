@@ -43,6 +43,7 @@ namespace djv
             FTK_P();
             setHStretch(ftk::Stretch::Expanding);
             _setMousePressEnabled(true);
+            _setMouseHoverEnabled(true);
             setTooltip("Tagged segments. Click one to select it.");
             p.model = model;
 
@@ -186,21 +187,50 @@ namespace djv
                 event.style->getColorRole(ftk::ColorRole::Text));
         }
 
+        int SegmentsBar::_hit(int x) const
+        {
+            FTK_P();
+            int out = -1;
+            for (size_t i = 0; i < p.segments.size(); ++i)
+            {
+                const int x0 = _frameToX(p.segments[i].start);
+                const int x1 = std::max(x0 + 2, _frameToX(p.segments[i].end + 1));
+                if (x >= x0 && x < x1)
+                {
+                    out = static_cast<int>(i);
+                }
+            }
+            return out;
+        }
+
+        void SegmentsBar::mouseMoveEvent(ftk::MouseMoveEvent& event)
+        {
+            IMouseWidget::mouseMoveEvent(event);
+            FTK_P();
+            // The tooltip is the segment under the pointer, with its note.
+            const int hit = _hit(event.pos.x);
+            std::string tooltip = "Tagged segments. Click one to select it.";
+            if (hit >= 0)
+            {
+                const Segment& s = p.segments[hit];
+                const std::string tag = s.tag >= 0 && s.tag < static_cast<int>(p.tags.size()) ?
+                    p.tags[s.tag].name :
+                    std::string();
+                tooltip = s.name + "  " + tag + "  " + std::to_string(s.start) + "-" + std::to_string(s.end);
+                if (!s.note.empty())
+                {
+                    tooltip += "\n" + s.note;
+                }
+            }
+            setTooltip(tooltip);
+        }
+
         void SegmentsBar::mousePressEvent(ftk::MouseClickEvent& event)
         {
             IMouseWidget::mousePressEvent(event);
             FTK_P();
             event.accept = true;
-            int hit = -1;
-            for (size_t i = 0; i < p.segments.size(); ++i)
-            {
-                const int x0 = _frameToX(p.segments[i].start);
-                const int x1 = std::max(x0 + 2, _frameToX(p.segments[i].end + 1));
-                if (event.pos.x >= x0 && event.pos.x < x1)
-                {
-                    hit = static_cast<int>(i);
-                }
-            }
+            const int hit = _hit(event.pos.x);
             if (auto model = p.model.lock())
             {
                 model->select(hit == p.selected ? -1 : hit);

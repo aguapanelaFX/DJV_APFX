@@ -65,6 +65,7 @@ namespace djv
             std::shared_ptr<ftk::Observer<int> > selectedObserver;
             std::shared_ptr<ftk::Observer<std::pair<int64_t, int64_t> > > rangeObserver;
             std::shared_ptr<ftk::Observer<SegmentMark> > markObserver;
+            SegmentMark mark;
         };
 
         void TagsTool::_init(
@@ -248,12 +249,8 @@ namespace djv
                 p.model->observeMark(),
                 [this](const SegmentMark& value)
                 {
-                    _p->markLabel->setText(value.hasStart ?
-                        ftk::Format("Mark: {0} - {1}   ({2} frames)").
-                            arg(std::to_string(value.start)).
-                            arg(std::to_string(value.end)).
-                            arg(std::to_string(value.end - value.start + 1)).str() :
-                        std::string("Mark: none"));
+                    _p->mark = value;
+                    _markLabelUpdate();
                 });
             p.markStartButton->setClickedCallback(
                 [modelWeak]
@@ -315,7 +312,34 @@ namespace djv
             {
                 p.segmentsRebuild = false;
                 _segmentsRebuild();
+                _markLabelUpdate();
             }
+        }
+
+        void TagsTool::_markLabelUpdate()
+        {
+            FTK_P();
+            std::string text;
+            if (p.selected >= 0 && p.selected < static_cast<int>(p.segments.size()))
+            {
+                const Segment& s = p.segments[p.selected];
+                text = ftk::Format("Editing {0}: [ and ] move its start and end ({1} - {2})").
+                    arg(s.name).
+                    arg(std::to_string(s.start)).
+                    arg(std::to_string(s.end)).str();
+            }
+            else if (p.mark.hasStart)
+            {
+                text = ftk::Format("Marked {0} - {1} ({2} frames): press + on a tag").
+                    arg(std::to_string(p.mark.start)).
+                    arg(std::to_string(p.mark.end)).
+                    arg(std::to_string(p.mark.end - p.mark.start + 1)).str();
+            }
+            else
+            {
+                text = "No range marked. Press [ and ].";
+            }
+            p.markLabel->setText(text);
         }
 
         void TagsTool::_tagsRebuild()
@@ -402,7 +426,11 @@ namespace djv
             {
                 const int index = static_cast<int>(i);
                 const Segment segment = p.segments[i];
-                auto row = ftk::HorizontalLayout::create(context, p.segmentsLayout);
+                auto box = ftk::VerticalLayout::create(context, p.segmentsLayout);
+                box->setSpacingRole(ftk::SizeRole::SpacingTool);
+
+                // Line 1: select, color, name, tag, remove.
+                auto row = ftk::HorizontalLayout::create(context, box);
                 row->setSpacingRole(ftk::SizeRole::SpacingSmall);
 
                 auto selectButton = ftk::ToolButton::create(context, row);
@@ -439,36 +467,6 @@ namespace djv
                         }
                     });
 
-                auto startEdit = ftk::IntEdit::create(context, row);
-                startEdit->setRange(static_cast<int>(p.range.first), static_cast<int>(p.range.second));
-                startEdit->setValue(static_cast<int>(segment.start));
-                startEdit->setTooltip("First frame.");
-                startEdit->setCallback(
-                    [modelWeak, index, segment](int value)
-                    {
-                        if (auto model = modelWeak.lock())
-                        {
-                            Segment s = segment;
-                            s.start = value;
-                            model->setSegment(index, s);
-                        }
-                    });
-
-                auto endEdit = ftk::IntEdit::create(context, row);
-                endEdit->setRange(static_cast<int>(p.range.first), static_cast<int>(p.range.second));
-                endEdit->setValue(static_cast<int>(segment.end));
-                endEdit->setTooltip("Last frame.");
-                endEdit->setCallback(
-                    [modelWeak, index, segment](int value)
-                    {
-                        if (auto model = modelWeak.lock())
-                        {
-                            Segment s = segment;
-                            s.end = value;
-                            model->setSegment(index, s);
-                        }
-                    });
-
                 auto tagComboBox = ftk::ComboBox::create(context, tagNames, row);
                 tagComboBox->setCurrentIndex(segment.tag);
                 tagComboBox->setTooltip("The segment's tag.");
@@ -492,6 +490,67 @@ namespace djv
                         if (auto model = modelWeak.lock())
                             model->removeSegment(index);
                     });
+
+                // Line 2: frames.
+                row = ftk::HorizontalLayout::create(context, box);
+                row->setSpacingRole(ftk::SizeRole::SpacingSmall);
+                row->setMarginRole(ftk::SizeRole::None);
+                auto startEdit = ftk::IntEdit::create(context, row);
+                startEdit->setRange(static_cast<int>(p.range.first), static_cast<int>(p.range.second));
+                startEdit->setValue(static_cast<int>(segment.start));
+                startEdit->setTooltip("First frame.");
+                startEdit->setCallback(
+                    [modelWeak, index, segment](int value)
+                    {
+                        if (auto model = modelWeak.lock())
+                        {
+                            Segment s = segment;
+                            s.start = value;
+                            model->setSegment(index, s);
+                        }
+                    });
+                ftk::Label::create(context, "-", row);
+                auto endEdit = ftk::IntEdit::create(context, row);
+                endEdit->setRange(static_cast<int>(p.range.first), static_cast<int>(p.range.second));
+                endEdit->setValue(static_cast<int>(segment.end));
+                endEdit->setTooltip("Last frame.");
+                endEdit->setCallback(
+                    [modelWeak, index, segment](int value)
+                    {
+                        if (auto model = modelWeak.lock())
+                        {
+                            Segment s = segment;
+                            s.end = value;
+                            model->setSegment(index, s);
+                        }
+                    });
+                auto lengthLabel = ftk::Label::create(
+                    context,
+                    std::to_string(segment.end - segment.start + 1) + " fr",
+                    row);
+                lengthLabel->setTextRole(ftk::ColorRole::TextDisabled);
+
+                // Line 3: note.
+                auto noteEdit = ftk::LineEdit::create(context, box);
+                noteEdit->setHStretch(ftk::Stretch::Expanding);
+                noteEdit->setText(segment.note);
+                noteEdit->setTooltip("Note, exported to Nuke, SOLVFX, the EDL and the XML.");
+                noteEdit->setCallbackOnFocusLost(true);
+                noteEdit->setCallback(
+                    [modelWeak, index, segment](const std::string& value)
+                    {
+                        if (auto model = modelWeak.lock())
+                        {
+                            Segment s = segment;
+                            s.note = value;
+                            model->setSegment(index, s);
+                        }
+                    });
+
+                if (i + 1 < p.segments.size())
+                {
+                    ftk::Divider::create(context, ftk::Orientation::Vertical, p.segmentsLayout);
+                }
             }
             p.nukeButton->setEnabled(!p.segments.empty());
             p.solvfxButton->setEnabled(!p.segments.empty());

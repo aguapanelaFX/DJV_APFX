@@ -41,6 +41,7 @@ namespace djv
             int         tag   = 0;
             int64_t     start = 0;
             int64_t     end   = 0;
+            std::string note;
 
             bool operator == (const Segment&) const = default;
         };

@@ -40,6 +40,7 @@ namespace djv
         private:
             void _tagsRebuild();
             void _segmentsRebuild();
+            void _markLabelUpdate();
 
             FTK_PRIVATE();
         };
