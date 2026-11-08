@@ -438,6 +438,9 @@ namespace djv
                     OTIO_NS::RationalTime(segment.start, p.rate),
                     OTIO_NS::RationalTime(segment.end, p.rate)));
                 p.settingInOut = false;
+                // Changing the in and out points drops the player's frame
+                // requests; a seek starts them again, or playback stalls.
+                p.player->seek(p.player->getCurrentTime());
             }
             _save();
         }
@@ -722,6 +725,9 @@ namespace djv
                 p.settingInOut = true;
                 p.player->setInOutRange(p.player->getTimeRange());
                 p.settingInOut = false;
+                // Changing the in and out points drops the player's frame
+                // requests; a seek starts them again, or playback stalls.
+                p.player->seek(p.player->getCurrentTime());
             }
         }
 
