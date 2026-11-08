@@ -6,7 +6,9 @@
 #include <djv/App/App.h>
 #include <djv/App/TagsModel.h>
 
+#include <ftk/UI/Action.h>
 #include <ftk/UI/ColorSwatch.h>
+#include <ftk/UI/Menu.h>
 #include <ftk/UI/ComboBox.h>
 #include <ftk/UI/Divider.h>
 #include <ftk/UI/IntEdit.h>
@@ -50,6 +52,9 @@ namespace djv
             std::shared_ptr<ftk::VerticalLayout> segmentsLayout;
             std::shared_ptr<ftk::PushButton> nukeButton;
             std::shared_ptr<ftk::PushButton> solvfxButton;
+            std::shared_ptr<ftk::PushButton> edlButton;
+            std::shared_ptr<ftk::PushButton> xmlButton;
+            std::shared_ptr<ftk::Menu> menu;
             std::shared_ptr<ftk::Label> exportLabel;
 
             std::shared_ptr<ftk::Observer<std::vector<Tag> > > tagsObserver;
@@ -113,6 +118,12 @@ namespace djv
             p.solvfxButton->setTooltip(
                 "Write <file>_solvfx.py next to the file.\n"
                 "Run it with SOLVFX.exe -l <script> to build the project.");
+            hLayout = ftk::HorizontalLayout::create(context, layout);
+            hLayout->setSpacingRole(ftk::SizeRole::SpacingSmall);
+            p.edlButton = ftk::PushButton::create(context, "Export EDL", hLayout);
+            p.edlButton->setTooltip("CMX 3600 EDL for Premiere, Resolve and Avid, as cuts or markers.");
+            p.xmlButton = ftk::PushButton::create(context, "Export XML", hLayout);
+            p.xmlButton->setTooltip("Final Cut Pro 7 XML for Premiere and Resolve, as cuts or markers.");
             p.exportLabel = ftk::Label::create(context, layout);
 
             _setWidget(layout);
@@ -139,6 +150,57 @@ namespace djv
                 [this]
                 {
                     _p->exportLabel->setText(_p->model->exportSOLVFX());
+                });
+
+            // Cuts or markers, asked in a menu under the button.
+            auto askCutsOrMarkers = [this](
+                const std::shared_ptr<ftk::PushButton>& button,
+                const std::function<std::string(bool)>& exportFnc)
+            {
+                FTK_P();
+                auto context = getContext();
+                if (!context)
+                    return;
+                if (p.menu)
+                {
+                    p.menu->close();
+                    return;
+                }
+                p.menu = ftk::Menu::create(context);
+                p.menu->addAction(ftk::Action::create(
+                    "As cuts (only the tagged shots)",
+                    [this, exportFnc]
+                    {
+                        _p->exportLabel->setText(exportFnc(false));
+                    }));
+                p.menu->addAction(ftk::Action::create(
+                    "As markers (whole cut, a marker per shot)",
+                    [this, exportFnc]
+                    {
+                        _p->exportLabel->setText(exportFnc(true));
+                    }));
+                p.menu->setCloseCallback(
+                    [this]
+                    {
+                        _p->menu.reset();
+                    });
+                p.menu->open(getWindow(), button->getGeometry());
+            };
+            p.edlButton->setClickedCallback(
+                [this, askCutsOrMarkers]
+                {
+                    auto model = _p->model;
+                    askCutsOrMarkers(
+                        _p->edlButton,
+                        [model](bool markers) { return model->exportEDL(markers); });
+                });
+            p.xmlButton->setClickedCallback(
+                [this, askCutsOrMarkers]
+                {
+                    auto model = _p->model;
+                    askCutsOrMarkers(
+                        _p->xmlButton,
+                        [model](bool markers) { return model->exportXML(markers); });
                 });
 
             p.tagsObserver = ftk::Observer<std::vector<Tag> >::create(
@@ -398,6 +460,8 @@ namespace djv
             }
             p.nukeButton->setEnabled(!p.segments.empty());
             p.solvfxButton->setEnabled(!p.segments.empty());
+            p.edlButton->setEnabled(!p.segments.empty());
+            p.xmlButton->setEnabled(!p.segments.empty());
         }
     }
 }

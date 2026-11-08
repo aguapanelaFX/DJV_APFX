@@ -108,6 +108,17 @@ namespace djv
             //! file; returns its path, or an error starting with "Error:".
             DJV_APP_API std::string exportSOLVFX();
 
+            //! Export a CMX 3600 EDL next to the file, as cuts (one event
+            //! per segment) or as markers (the whole file with a locator
+            //! per segment). Returns its path, or an error starting with
+            //! "Error:".
+            DJV_APP_API std::string exportEDL(bool markers);
+
+            //! Export a Final Cut Pro 7 XML (Premiere, Resolve) next to the
+            //! file, as cuts or as markers. Returns its path, or an error
+            //! starting with "Error:".
+            DJV_APP_API std::string exportXML(bool markers);
+
         private:
             void _playerUpdate();
             void _load();

@@ -84,6 +84,128 @@ namespace djv
                 std::snprintf(buf, sizeof(buf), "%02x%02x%02x", to8(c.r), to8(c.g), to8(c.b));
                 return buf;
             }
+
+            //! Integer timecode base and whether it is NTSC (23.976 etc.).
+            std::pair<int, bool> timebase(double rate)
+            {
+                const int base = std::max(1, static_cast<int>(std::round(rate)));
+                const bool ntsc = std::fabs(rate - base) > .001 && std::fabs(rate * 1.001 - base) < .01;
+                return std::make_pair(base, ntsc);
+            }
+
+            //! Non drop frame timecode.
+            std::string timecode(int64_t frame, int base)
+            {
+                if (frame < 0)
+                    frame = 0;
+                char buf[32];
+                std::snprintf(
+                    buf, sizeof(buf), "%02d:%02d:%02d:%02d",
+                    static_cast<int>(frame / (3600LL * base)),
+                    static_cast<int>((frame / (60LL * base)) % 60),
+                    static_cast<int>((frame / base) % 60),
+                    static_cast<int>(frame % base));
+                return buf;
+            }
+
+            std::string xmlEscape(const std::string& value)
+            {
+                std::string out;
+                for (char c : value)
+                {
+                    switch (c)
+                    {
+                    case '&': out += "&amp;"; break;
+                    case '<': out += "&lt;"; break;
+                    case '>': out += "&gt;"; break;
+                    case '"': out += "&quot;"; break;
+                    default: out += c; break;
+                    }
+                }
+                return out;
+            }
+
+            std::string pathURL(const std::string& path)
+            {
+                std::string out = "file://localhost/";
+                std::string p = forwardSlashes(path);
+                while (!p.empty() && p[0] == '/')
+                {
+                    p.erase(0, 1);
+                }
+                for (unsigned char c : p)
+                {
+                    if (std::isalnum(c) || c == '/' || c == '.' || c == '-' || c == '_')
+                    {
+                        out += static_cast<char>(c);
+                    }
+                    else
+                    {
+                        char buf[8];
+                        std::snprintf(buf, sizeof(buf), "%%%02x", c);
+                        out += buf;
+                    }
+                }
+                return out;
+            }
+
+            //! The nearest of the colors a list of names offers.
+            std::string nearestName(
+                const ftk::Color4F& c,
+                const std::vector<std::pair<std::string, ftk::Color4F> >& names)
+            {
+                std::string out;
+                float best = 1e9F;
+                for (const auto& n : names)
+                {
+                    const float d =
+                        (c.r - n.second.r) * (c.r - n.second.r) +
+                        (c.g - n.second.g) * (c.g - n.second.g) +
+                        (c.b - n.second.b) * (c.b - n.second.b);
+                    if (d < best)
+                    {
+                        best = d;
+                        out = n.first;
+                    }
+                }
+                return out;
+            }
+
+            //! Avid / Resolve locator colors.
+            std::string locatorColor(const ftk::Color4F& c)
+            {
+                return nearestName(c, {
+                    { "RED", ftk::Color4F(1.F, 0.F, 0.F) },
+                    { "GREEN", ftk::Color4F(0.F, .8F, 0.F) },
+                    { "BLUE", ftk::Color4F(0.F, .3F, 1.F) },
+                    { "CYAN", ftk::Color4F(0.F, .9F, .9F) },
+                    { "MAGENTA", ftk::Color4F(.9F, 0.F, .9F) },
+                    { "YELLOW", ftk::Color4F(1.F, .85F, 0.F) },
+                    { "WHITE", ftk::Color4F(1.F, 1.F, 1.F) },
+                    { "BLACK", ftk::Color4F(0.F, 0.F, 0.F) } });
+            }
+
+            //! Premiere label colors.
+            std::string premiereLabel(const ftk::Color4F& c)
+            {
+                return nearestName(c, {
+                    { "Violet", ftk::Color4F(.65F, .55F, .85F) },
+                    { "Iris", ftk::Color4F(.40F, .55F, .85F) },
+                    { "Caribbean", ftk::Color4F(.10F, .75F, .65F) },
+                    { "Lavender", ftk::Color4F(.85F, .55F, .85F) },
+                    { "Cerulean", ftk::Color4F(.10F, .60F, .85F) },
+                    { "Forest", ftk::Color4F(.35F, .65F, .20F) },
+                    { "Rose", ftk::Color4F(.90F, .40F, .55F) },
+                    { "Mango", ftk::Color4F(.95F, .60F, .15F) },
+                    { "Purple", ftk::Color4F(.55F, .25F, .75F) },
+                    { "Blue", ftk::Color4F(.20F, .35F, .90F) },
+                    { "Teal", ftk::Color4F(.15F, .55F, .55F) },
+                    { "Magenta", ftk::Color4F(.85F, .15F, .65F) },
+                    { "Tan", ftk::Color4F(.80F, .70F, .55F) },
+                    { "Green", ftk::Color4F(.30F, .80F, .30F) },
+                    { "Brown", ftk::Color4F(.55F, .35F, .20F) },
+                    { "Yellow", ftk::Color4F(.95F, .90F, .25F) } });
+            }
         }
 
         struct TagsModel::Private
@@ -786,6 +908,187 @@ except Exception:
                 return "Error: cannot write " + pyPath;
             out << ss.str();
             return pyPath;
+        }
+
+        std::string TagsModel::exportEDL(bool markers)
+        {
+            FTK_P();
+            if (p.path.isEmpty())
+                return "Error: no file is open.";
+            const auto& tags = p.tags->get();
+            const auto& segments = p.segments->get();
+            const auto range = p.range->get();
+            const int base = timebase(p.rate).first;
+            const int64_t recStart = 3600LL * base;
+            const std::string clipName = p.path.getFileName();
+            const std::string outPath = exportBase(p.path) + (markers ? "_markers.edl" : "_cuts.edl");
+
+            auto tagOf = [&tags](const Segment& s)
+            {
+                return s.tag >= 0 && s.tag < static_cast<int>(tags.size()) ? tags[s.tag] : Tag();
+            };
+
+            std::stringstream ss;
+            ss << "TITLE: " << ftk::Path(outPath).getBase() << "\r\n";
+            ss << "FCM: NON-DROP FRAME\r\n\r\n";
+            char buf[256];
+            if (markers)
+            {
+                const int64_t duration = range.second - range.first + 1;
+                std::snprintf(buf, sizeof(buf), "%03d  AX       V     C        %s %s %s %s\r\n",
+                    1,
+                    timecode(0, base).c_str(),
+                    timecode(duration, base).c_str(),
+                    timecode(recStart, base).c_str(),
+                    timecode(recStart + duration, base).c_str());
+                ss << buf;
+                ss << "* FROM CLIP NAME: " << clipName << "\r\n";
+                for (const auto& s : segments)
+                {
+                    const Tag tag = tagOf(s);
+                    ss << "* LOC: " << timecode(recStart + s.start - range.first, base) << " "
+                        << locatorColor(tag.color) << "  " << s.name << " " << tag.name << " ("
+                        << (s.end - s.start + 1) << " frames)\r\n";
+                }
+            }
+            else
+            {
+                int64_t rec = recStart;
+                int event = 1;
+                for (const auto& s : segments)
+                {
+                    const Tag tag = tagOf(s);
+                    const int64_t in = s.start - range.first;
+                    const int64_t out = s.end - range.first + 1;
+                    std::snprintf(buf, sizeof(buf), "%03d  AX       V     C        %s %s %s %s\r\n",
+                        event++,
+                        timecode(in, base).c_str(),
+                        timecode(out, base).c_str(),
+                        timecode(rec, base).c_str(),
+                        timecode(rec + out - in, base).c_str());
+                    ss << buf;
+                    ss << "* FROM CLIP NAME: " << clipName << "\r\n";
+                    ss << "* COMMENT: " << s.name << " " << tag.name << "\r\n\r\n";
+                    rec += out - in;
+                }
+            }
+
+            std::ofstream file(ftk::toFileSystem(outPath), std::ios::binary);
+            if (!file.is_open())
+                return "Error: cannot write " + outPath;
+            file << ss.str();
+            return outPath;
+        }
+
+        std::string TagsModel::exportXML(bool markers)
+        {
+            FTK_P();
+            if (p.path.isEmpty())
+                return "Error: no file is open.";
+            const auto& tags = p.tags->get();
+            const auto& segments = p.segments->get();
+            const auto range = p.range->get();
+            const auto tb = timebase(p.rate);
+            const int64_t duration = range.second - range.first + 1;
+            const std::string clipName = p.path.getFileName();
+            const std::string outPath = exportBase(p.path) + (markers ? "_markers.xml" : "_cuts.xml");
+            const std::string seqName = ftk::Path(outPath).getBase();
+
+            auto tagOf = [&tags](const Segment& s)
+            {
+                return s.tag >= 0 && s.tag < static_cast<int>(tags.size()) ? tags[s.tag] : Tag();
+            };
+            std::stringstream rate;
+            rate << "<rate><timebase>" << tb.first << "</timebase><ntsc>"
+                << (tb.second ? "TRUE" : "FALSE") << "</ntsc></rate>";
+
+            bool fileWritten = false;
+            auto fileElement = [&]()
+            {
+                std::stringstream f;
+                if (!fileWritten)
+                {
+                    fileWritten = true;
+                    f << "<file id=\"file-1\"><name>" << xmlEscape(clipName) << "</name>"
+                        << "<pathurl>" << xmlEscape(pathURL(p.path.get())) << "</pathurl>"
+                        << rate.str() << "<duration>" << duration << "</duration>"
+                        << "<media><video></video><audio></audio></media></file>";
+                }
+                else
+                {
+                    f << "<file id=\"file-1\"/>";
+                }
+                return f.str();
+            };
+            auto clipItem = [&](int id, const std::string& name, int64_t start, int64_t end,
+                int64_t in, int64_t out, const std::string& label)
+            {
+                std::stringstream c;
+                c << "<clipitem id=\"clipitem-" << id << "\"><name>" << xmlEscape(name) << "</name>"
+                    << "<enabled>TRUE</enabled><duration>" << duration << "</duration>" << rate.str()
+                    << "<start>" << start << "</start><end>" << end << "</end>"
+                    << "<in>" << in << "</in><out>" << out << "</out>"
+                    << fileElement();
+                if (!label.empty())
+                {
+                    c << "<labels><label2>" << label << "</label2></labels>";
+                }
+                c << "</clipitem>\n";
+                return c.str();
+            };
+
+            std::stringstream items;
+            std::stringstream sequenceMarkers;
+            int64_t sequenceDuration = 0;
+            if (markers)
+            {
+                items << clipItem(1, clipName, 0, duration, 0, duration, std::string());
+                sequenceDuration = duration;
+                for (const auto& s : segments)
+                {
+                    const Tag tag = tagOf(s);
+                    sequenceMarkers << "<marker><name>" << xmlEscape(s.name) << "</name>"
+                        << "<comment>" << xmlEscape(tag.name) << "</comment>"
+                        << "<in>" << (s.start - range.first) << "</in>"
+                        << "<out>" << (s.end - range.first + 1) << "</out></marker>\n";
+                }
+            }
+            else
+            {
+                int id = 1;
+                for (const auto& s : segments)
+                {
+                    const Tag tag = tagOf(s);
+                    const int64_t in = s.start - range.first;
+                    const int64_t out = s.end - range.first + 1;
+                    items << clipItem(
+                        id++,
+                        s.name + " " + tag.name,
+                        sequenceDuration,
+                        sequenceDuration + out - in,
+                        in,
+                        out,
+                        premiereLabel(tag.color));
+                    sequenceDuration += out - in;
+                }
+            }
+
+            std::stringstream ss;
+            ss << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE xmeml>\n";
+            ss << "<xmeml version=\"4\">\n<sequence id=\"sequence-1\">\n";
+            ss << "<name>" << xmlEscape(seqName) << "</name>\n";
+            ss << "<duration>" << sequenceDuration << "</duration>\n" << rate.str() << "\n";
+            ss << "<timecode>" << rate.str() << "<string>01:00:00:00</string><frame>"
+                << (3600LL * tb.first) << "</frame><displayformat>NDF</displayformat></timecode>\n";
+            ss << "<media><video><track>\n" << items.str() << "</track></video></media>\n";
+            ss << sequenceMarkers.str();
+            ss << "</sequence>\n</xmeml>\n";
+
+            std::ofstream file(ftk::toFileSystem(outPath));
+            if (!file.is_open())
+                return "Error: cannot write " + outPath;
+            file << ss.str();
+            return outPath;
         }
     }
 }
