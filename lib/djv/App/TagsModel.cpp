@@ -919,7 +919,11 @@ except Exception:
             const auto& segments = p.segments->get();
             const auto range = p.range->get();
             const int base = timebase(p.rate).first;
-            const int64_t recStart = 3600LL * base;
+            // DJV numbers a movie's frames from its embedded timecode, so
+            // the frames are the source timecode as they are. The markers
+            // sequence starts at the source timecode too, so it lines up
+            // with the editor's cut; one without timecode at 01:00:00:00.
+            const int64_t recStart = markers && range.first > 0 ? range.first : 3600LL * base;
             const std::string clipName = p.path.getFileName();
             const std::string outPath = exportBase(p.path) + (markers ? "_markers.edl" : "_cuts.edl");
 
@@ -937,8 +941,8 @@ except Exception:
                 const int64_t duration = range.second - range.first + 1;
                 std::snprintf(buf, sizeof(buf), "%03d  AX       V     C        %s %s %s %s\r\n",
                     1,
-                    timecode(0, base).c_str(),
-                    timecode(duration, base).c_str(),
+                    timecode(range.first, base).c_str(),
+                    timecode(range.first + duration, base).c_str(),
                     timecode(recStart, base).c_str(),
                     timecode(recStart + duration, base).c_str());
                 ss << buf;
@@ -958,8 +962,8 @@ except Exception:
                 for (const auto& s : segments)
                 {
                     const Tag tag = tagOf(s);
-                    const int64_t in = s.start - range.first;
-                    const int64_t out = s.end - range.first + 1;
+                    const int64_t in = s.start;
+                    const int64_t out = s.end + 1;
                     std::snprintf(buf, sizeof(buf), "%03d  AX       V     C        %s %s %s %s\r\n",
                         event++,
                         timecode(in, base).c_str(),
@@ -1012,6 +1016,9 @@ except Exception:
                     f << "<file id=\"file-1\"><name>" << xmlEscape(clipName) << "</name>"
                         << "<pathurl>" << xmlEscape(pathURL(p.path.get())) << "</pathurl>"
                         << rate.str() << "<duration>" << duration << "</duration>"
+                        << "<timecode>" << rate.str() << "<string>" << timecode(range.first, tb.first)
+                        << "</string><frame>" << range.first << "</frame>"
+                        << "<displayformat>NDF</displayformat></timecode>"
                         << "<media><video></video><audio></audio></media></file>";
                 }
                 else
@@ -1078,8 +1085,9 @@ except Exception:
             ss << "<xmeml version=\"4\">\n<sequence id=\"sequence-1\">\n";
             ss << "<name>" << xmlEscape(seqName) << "</name>\n";
             ss << "<duration>" << sequenceDuration << "</duration>\n" << rate.str() << "\n";
-            ss << "<timecode>" << rate.str() << "<string>01:00:00:00</string><frame>"
-                << (3600LL * tb.first) << "</frame><displayformat>NDF</displayformat></timecode>\n";
+            const int64_t seqStart = markers && range.first > 0 ? range.first : 3600LL * tb.first;
+            ss << "<timecode>" << rate.str() << "<string>" << timecode(seqStart, tb.first)
+                << "</string><frame>" << seqStart << "</frame><displayformat>NDF</displayformat></timecode>\n";
             ss << "<media><video><track>\n" << items.str() << "</track></video></media>\n";
             ss << sequenceMarkers.str();
             ss << "</sequence>\n</xmeml>\n";
