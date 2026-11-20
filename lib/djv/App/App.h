@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <djv/UI/Guides.h>
 #include <djv/App/Export.h>
 #include <djv/Models/Export.h>
 #include <djv/Models/SettingsModel.h>
@@ -279,11 +280,26 @@ namespace djv
             //! Reload the active files.
             DJV_APP_API void reload();
 
+            //! APFX: swap the current file for its next or previous version
+            //! on disk (shot_v003 -> shot_v004), keeping the frame, the
+            //! comparison and the file's color choice.
+            DJV_APP_API void versionUp();
+            DJV_APP_API void versionDown();
+
+            //! APFX: play the open files back to back, in the order of the
+            //! file list and each within its in/out points, as one
+            //! timeline in a new tab.
+            DJV_APP_API void playFilesAsSequence();
+
             //! Observe the timeline player.
             DJV_APP_API std::shared_ptr<ftk::IObservable<std::shared_ptr<tl::Player> > > observePlayer() const;
 
             //! Get the tool widget factory.
             DJV_APP_API const std::shared_ptr<ToolWidgetFactory>& getToolWidgetFactory() const;
+
+            //! APFX: the viewer guides (mask and safe areas).
+            DJV_APP_API std::shared_ptr<ftk::IObservable<ui::Guides> > observeGuides() const;
+            DJV_APP_API void setGuides(const ui::Guides&);
 
             //! APFX: get the tags model.
             DJV_APP_API const std::shared_ptr<TagsModel>& getTagsModel() const;
@@ -360,6 +376,7 @@ namespace djv
             // different shape, the position and the in/out range cannot be
             // carried over as they are, since both are in timeline time.
             void _reload(bool restructured);
+            void _version(int);
             void _reloadUpdate(const std::shared_ptr<models::FilesModelItem>&);
             void _layersUpdate(const std::vector<int>&);
             void _mediaReferenceKeysUpdate(const std::vector<std::string>&);

@@ -157,6 +157,7 @@ namespace djv
             std::shared_ptr<CompareToolBar> compareToolBar;
             std::shared_ptr<ViewToolBar> viewToolBar;
             std::shared_ptr<ColorToolBar> colorToolBar;
+            std::shared_ptr<ftk::Observer<ui::Guides> > guidesObserver;
             std::shared_ptr<WindowToolBar> windowToolBar;
             std::shared_ptr<ToolsToolBar> toolsToolBar;
             std::shared_ptr<TabBar> tabBar;
@@ -441,6 +442,14 @@ namespace djv
             vLayout->setSpacingRole(ftk::SizeRole::None);
             p.tabBar->setParent(vLayout);
             p.viewport->setParent(vLayout);
+            // APFX: the viewer guides.
+            p.guidesObserver = ftk::Observer<ui::Guides>::create(
+                app->observeGuides(),
+                [this](const ui::Guides& value)
+                {
+                    _p->viewport->setGuides(value);
+                });
+
             // APFX: the tagged segments, between the viewer and the
             // timeline.
             if (auto tagsModel = app->getTagsModel())

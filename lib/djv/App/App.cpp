@@ -588,6 +588,16 @@ namespace djv
             return _p->toolWidgetFactory;
         }
 
+        std::shared_ptr<ftk::IObservable<ui::Guides> > App::observeGuides() const
+        {
+            return _p->guides;
+        }
+
+        void App::setGuides(const ui::Guides& value)
+        {
+            _p->guides->setIfChanged(value);
+        }
+
         const std::shared_ptr<TagsModel>& App::getTagsModel() const
         {
             return _p->tagsModel;
@@ -1130,6 +1140,9 @@ namespace djv
             p.toolWidgetFactory->addTool("Settings", &SettingsTool::create);
             p.toolWidgetFactory->addTool("System Log", &SysLogTool::create);
             p.toolWidgetFactory->addTool("Tags", &TagsTool::create);
+
+            // APFX: the viewer guides.
+            p.guides = ftk::Observable<ui::Guides>::create(ui::Guides());
 
             // APFX: the tags, before the main window, which draws them.
             p.tagsModel = TagsModel::create(

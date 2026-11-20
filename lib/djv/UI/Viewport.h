@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <djv/UI/Guides.h>
 #include <djv/UI/Export.h>
 
 #include <tlRender/UI/Viewport.h>
@@ -71,6 +72,9 @@ namespace djv
             //! Unlike the errors it shows even when the toast is not active:
             //! it is what to do next, e.g., how to leave presentation mode.
             DJV_UI_API void showHint(const std::string&);
+
+            //! APFX: set the guides (mask and safe areas).
+            DJV_UI_API void setGuides(const Guides&);
 
             //! Set whether the heads up display is shown at all. Separate from
             //! the display's own options so that turning it off for

@@ -36,6 +36,8 @@ namespace djv
                 const std::shared_ptr<IWidget>& parent = nullptr);
 
         private:
+            void _guidesMenu();
+
             FTK_PRIVATE();
         };
     }

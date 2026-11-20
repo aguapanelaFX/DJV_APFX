@@ -63,9 +63,12 @@ namespace djv
             addAction(actions["Close"]);
             addAction(actions["CloseAll"]);
             addAction(actions["Reload"]);
+            addAction(actions["VersionUp"]);
+            addAction(actions["VersionDown"]);
             addDivider();
             addAction(actions["OpenPlaylist"]);
             addAction(actions["SavePlaylist"]);
+            addAction(actions["PlayAsSequence"]);
             p.menus["RecentPlaylists"] = addSubMenu("Recent Playlists");
             addDivider();
             p.menus["Current"] = addSubMenu("Current");

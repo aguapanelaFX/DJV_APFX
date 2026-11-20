@@ -8,12 +8,17 @@
 #include <djv/Models/OCIOModel.h>
 #include <djv/Models/ViewportModel.h>
 
+#include <ftk/UI/Action.h>
 #include <ftk/UI/CheckBox.h>
+#include <ftk/UI/Menu.h>
+#include <ftk/UI/PushButton.h>
 #include <ftk/UI/ComboBox.h>
 #include <ftk/UI/FloatEditSlider.h>
 #include <ftk/UI/Label.h>
 #include <ftk/UI/RowLayout.h>
 #include <ftk/UI/ToolButton.h>
+
+#include <cmath>
 
 namespace djv
 {
@@ -30,6 +35,9 @@ namespace djv
             std::shared_ptr<ftk::FloatEditSlider> gammaSlider;
             std::shared_ptr<ftk::FloatEditSlider> saturationSlider;
             std::shared_ptr<ftk::ToolButton> resetButton;
+            std::shared_ptr<ftk::PushButton> guidesButton;
+            std::shared_ptr<ftk::Menu> guidesMenu;
+            std::weak_ptr<App> app;
             std::shared_ptr<ftk::HorizontalLayout> layout;
 
             std::shared_ptr<ftk::Observer<tl::OCIOOptions> > optionsObserver;
@@ -144,6 +152,16 @@ namespace djv
             p.saturationSlider->setHStretch(ftk::Stretch::Expanding);
             p.resetButton->setParent(p.layout);
 
+            // APFX: guides, a menu of masks and safe areas.
+            p.app = app;
+            p.guidesButton = ftk::PushButton::create(context, "Guides", p.layout);
+            p.guidesButton->setTooltip("Aspect ratio masks and safe areas.");
+            p.guidesButton->setClickedCallback(
+                [this]
+                {
+                    _guidesMenu();
+                });
+
             // OCIO display and view, kept in step with the Color tool
             // through the color model.
             p.optionsObserver = ftk::Observer<tl::OCIOOptions>::create(
@@ -255,6 +273,105 @@ namespace djv
                         viewportModel->setDisplayOptions(options);
                     }
                 });
+        }
+
+        void ColorToolBar::_guidesMenu()
+        {
+            FTK_P();
+            auto context = getContext();
+            auto app = p.app.lock();
+            if (!context || !app)
+                return;
+            if (p.guidesMenu)
+            {
+                p.guidesMenu->close();
+                return;
+            }
+            const ui::Guides guides = app->observeGuides()->get();
+            std::weak_ptr<App> appWeak(app);
+            p.guidesMenu = ftk::Menu::create(context);
+
+            const std::vector<std::pair<std::string, float> > masks =
+            {
+                { "No mask", 0.F },
+                { "2.39 : 1", 2.39F },
+                { "2.35 : 1", 2.35F },
+                { "2.00 : 1", 2.F },
+                { "1.85 : 1", 1.85F },
+                { "16 : 9", 16.F / 9.F },
+                { "4 : 3", 4.F / 3.F },
+                { "1 : 1", 1.F },
+                { "9 : 16", 9.F / 16.F },
+                { "4 : 5", .8F }
+            };
+            for (const auto& mask : masks)
+            {
+                const float value = mask.second;
+                auto action = ftk::Action::create(
+                    mask.first,
+                    [appWeak, value](bool)
+                    {
+                        if (auto app = appWeak.lock())
+                        {
+                            auto g = app->observeGuides()->get();
+                            g.maskAspect = value;
+                            app->setGuides(g);
+                        }
+                    });
+                p.guidesMenu->addAction(action);
+                p.guidesMenu->setChecked(action, std::fabs(guides.maskAspect - value) < .001F);
+            }
+            p.guidesMenu->addDivider();
+            const std::vector<std::pair<std::string, float> > opacities =
+            {
+                { "Mask 50%", .5F },
+                { "Mask 75%", .75F },
+                { "Mask 100%", 1.F }
+            };
+            for (const auto& opacity : opacities)
+            {
+                const float value = opacity.second;
+                auto action = ftk::Action::create(
+                    opacity.first,
+                    [appWeak, value](bool)
+                    {
+                        if (auto app = appWeak.lock())
+                        {
+                            auto g = app->observeGuides()->get();
+                            g.maskOpacity = value;
+                            app->setGuides(g);
+                        }
+                    });
+                p.guidesMenu->addAction(action);
+                p.guidesMenu->setChecked(action, std::fabs(guides.maskOpacity - value) < .001F);
+            }
+            auto addToggle = [this, appWeak](const std::string& text, bool checked, bool ui::Guides::*member)
+            {
+                auto action = ftk::Action::create(
+                    text,
+                    [appWeak, member](bool value)
+                    {
+                        if (auto app = appWeak.lock())
+                        {
+                            auto g = app->observeGuides()->get();
+                            g.*member = value;
+                            app->setGuides(g);
+                        }
+                    });
+                _p->guidesMenu->addAction(action);
+                _p->guidesMenu->setChecked(action, checked);
+            };
+            addToggle("Mask line", guides.maskLine, &ui::Guides::maskLine);
+            p.guidesMenu->addDivider();
+            addToggle("Action safe (90%)", guides.actionSafe, &ui::Guides::actionSafe);
+            addToggle("Title safe (80%)", guides.titleSafe, &ui::Guides::titleSafe);
+
+            p.guidesMenu->setCloseCallback(
+                [this]
+                {
+                    _p->guidesMenu.reset();
+                });
+            p.guidesMenu->open(getWindow(), p.guidesButton->getGeometry());
         }
 
         ColorToolBar::ColorToolBar() :

@@ -162,6 +162,8 @@ namespace djv
 
         struct Viewport::Private
         {
+            Guides guides;
+
             std::weak_ptr<models::ViewportModel> viewportModel;
             std::weak_ptr<models::TimeUnitsModel> timeUnitsModel;
             models::HUDOptions hudOptions;
@@ -791,6 +793,15 @@ namespace djv
             return _p->hudLayout->getSizeHint();
         }
 
+        void Viewport::setGuides(const Guides& value)
+        {
+            FTK_P();
+            if (value == p.guides)
+                return;
+            p.guides = value;
+            setDrawUpdate();
+        }
+
         void Viewport::setGeometry(const ftk::Box2I& value)
         {
             tl::ui::Viewport::setGeometry(value);
@@ -1271,6 +1282,85 @@ namespace djv
                 const int w = video.layers[0].image->getSize().w;
                 return w > 0 ? boxes[index].w() / static_cast<float>(w) : 1.F;
             };
+
+            // APFX: the guides, under the drawings, over each picture shown.
+            if (p.guides.maskAspect > 0.F || p.guides.actionSafe || p.guides.titleSafe)
+            {
+                for (size_t index = 0; index < p.videoFrames.size(); ++index)
+                {
+                    const int i = static_cast<int>(index);
+                    if (!_hasPicture(i) || !tl::isShown(p.compare, index))
+                        continue;
+                    const auto& video = p.videoFrames[index];
+                    if (video.layers.empty() || !video.layers[0].image)
+                        continue;
+                    const ftk::Size2I size = video.layers[0].image->getSize();
+                    const ftk::V2F a = _imageToWidget(i, ftk::V2F(0.F, 0.F));
+                    const ftk::V2F b = _imageToWidget(i, ftk::V2F(size.w, size.h));
+                    const float x0 = std::min(a.x, b.x) + g.min.x;
+                    const float x1 = std::max(a.x, b.x) + g.min.x;
+                    const float y0 = std::min(a.y, b.y) + g.min.y;
+                    const float y1 = std::max(a.y, b.y) + g.min.y;
+                    const float w = x1 - x0;
+                    const float h = y1 - y0;
+                    if (w < 2.F || h < 2.F)
+                        continue;
+
+                    // The active frame: the picture, or the part of it the
+                    // mask leaves.
+                    float fx0 = x0, fx1 = x1, fy0 = y0, fy1 = y1;
+                    if (p.guides.maskAspect > 0.F)
+                    {
+                        const float aspect = w / h;
+                        const ftk::Color4F maskColor(0.F, 0.F, 0.F, p.guides.maskOpacity);
+                        if (p.guides.maskAspect > aspect)
+                        {
+                            const float mh = w / p.guides.maskAspect;
+                            fy0 = y0 + (h - mh) / 2.F;
+                            fy1 = fy0 + mh;
+                            event.render->drawRect(
+                                ftk::Box2I(x0, y0, w, std::max(0.F, fy0 - y0)), maskColor);
+                            event.render->drawRect(
+                                ftk::Box2I(x0, fy1, w, std::max(0.F, y1 - fy1)), maskColor);
+                        }
+                        else if (p.guides.maskAspect < aspect)
+                        {
+                            const float mw = h * p.guides.maskAspect;
+                            fx0 = x0 + (w - mw) / 2.F;
+                            fx1 = fx0 + mw;
+                            event.render->drawRect(
+                                ftk::Box2I(x0, y0, std::max(0.F, fx0 - x0), h), maskColor);
+                            event.render->drawRect(
+                                ftk::Box2I(fx1, y0, std::max(0.F, x1 - fx1), h), maskColor);
+                        }
+                    }
+
+                    auto outline = [&event](float l, float t, float r, float bt, const ftk::Color4F& color)
+                    {
+                        const int lw = 1;
+                        event.render->drawRect(ftk::Box2I(l, t, r - l, lw), color);
+                        event.render->drawRect(ftk::Box2I(l, bt - lw, r - l, lw), color);
+                        event.render->drawRect(ftk::Box2I(l, t, lw, bt - t), color);
+                        event.render->drawRect(ftk::Box2I(r - lw, t, lw, bt - t), color);
+                    };
+                    const float fw = fx1 - fx0;
+                    const float fh = fy1 - fy0;
+                    if (p.guides.maskAspect > 0.F && p.guides.maskLine)
+                    {
+                        outline(fx0, fy0, fx1, fy1, ftk::Color4F(1.F, 1.F, 1.F, .5F));
+                    }
+                    if (p.guides.actionSafe)
+                    {
+                        outline(fx0 + fw * .05F, fy0 + fh * .05F, fx1 - fw * .05F, fy1 - fh * .05F,
+                            ftk::Color4F(1.F, .85F, .2F, .8F));
+                    }
+                    if (p.guides.titleSafe)
+                    {
+                        outline(fx0 + fw * .1F, fy0 + fh * .1F, fx1 - fw * .1F, fy1 - fh * .1F,
+                            ftk::Color4F(.3F, .8F, 1.F, .8F));
+                    }
+                }
+            }
 
             // The strokes already committed on this frame.
             const auto& annotations = p.annotationsModel->getAnnotations();

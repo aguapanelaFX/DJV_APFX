@@ -166,6 +166,39 @@ namespace djv
                 });
 
             _addCommand(
+                "VersionUp",
+                "Swap the current file for its next version (v003 to v004).",
+                [appWeak](const nlohmann::json&)
+                {
+                    if (auto app = appWeak.lock())
+                    {
+                        app->versionUp();
+                    }
+                });
+
+            _addCommand(
+                "VersionDown",
+                "Swap the current file for its previous version (v004 to v003).",
+                [appWeak](const nlohmann::json&)
+                {
+                    if (auto app = appWeak.lock())
+                    {
+                        app->versionDown();
+                    }
+                });
+
+            _addCommand(
+                "PlayAsSequence",
+                "Play the open files back to back as one sequence.",
+                [appWeak](const nlohmann::json&)
+                {
+                    if (auto app = appWeak.lock())
+                    {
+                        app->playFilesAsSequence();
+                    }
+                });
+
+            _addCommand(
                 "Reload",
                 "Reload the current file.",
                 [appWeak](const nlohmann::json&)
@@ -364,6 +397,22 @@ namespace djv
                 "Reload",
                 "FileReload",
                 _command("Reload"));
+            _actions["VersionUp"] = ftk::Action::create(
+                "Version Up",
+                _command("VersionUp"));
+            _tooltips["VersionUp"] =
+                "Swap the current file for its next version on disk (v003 to v004).";
+            _actions["VersionDown"] = ftk::Action::create(
+                "Version Down",
+                _command("VersionDown"));
+            _tooltips["VersionDown"] =
+                "Swap the current file for its previous version on disk (v004 to v003).";
+            _actions["PlayAsSequence"] = ftk::Action::create(
+                "Play Files as Sequence",
+                _command("PlayAsSequence"));
+            _tooltips["PlayAsSequence"] =
+                "Play the open files back to back in the file list's order, "
+                "each within its in/out points, as one timeline in a new tab.";
             _actions["Next"] = ftk::Action::create(
                 "Next",
                 "Next",
@@ -407,6 +456,9 @@ namespace djv
                     ftk::Key::E,
                     static_cast<int>(ftk::KeyModifier::Shift) | static_cast<int>(ftk::commandKeyModifier)));
             _addShortcut("Reload", ftk::KeyShortcut(ftk::Key::R, static_cast<int>(ftk::commandKeyModifier)));
+            _addShortcut("VersionUp", ftk::KeyShortcut(ftk::Key::Up, static_cast<int>(ftk::KeyModifier::Alt)));
+            _addShortcut("VersionDown", ftk::KeyShortcut(ftk::Key::Down, static_cast<int>(ftk::KeyModifier::Alt)));
+            _addShortcut("PlayAsSequence", "Play files as sequence");
             _addShortcut("Next", ftk::KeyShortcut(ftk::Key::PageDown, static_cast<int>(ftk::KeyModifier::Control)));
             _addShortcut("Prev", ftk::KeyShortcut(ftk::Key::PageUp, static_cast<int>(ftk::KeyModifier::Control)));
             _addShortcut("NextMediaReference",
@@ -426,6 +478,9 @@ namespace djv
                     _actions["Close"]->setEnabled(!value.empty());
                     _actions["CloseAll"]->setEnabled(!value.empty());
                     _actions["Reload"]->setEnabled(!value.empty());
+                    _actions["VersionUp"]->setEnabled(!value.empty());
+                    _actions["VersionDown"]->setEnabled(!value.empty());
+                    _actions["PlayAsSequence"]->setEnabled(value.size() > 1);
                     _actions["Next"]->setEnabled(value.size() > 1);
                     _actions["Prev"]->setEnabled(value.size() > 1);
                 });

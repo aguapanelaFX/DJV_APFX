@@ -3,6 +3,7 @@ set(HEADERS
     AudioPopup.h
     ColorSpaceButton.h
     ColorWidgets.h
+    Guides.h
     FileThumbnail.h
     FrameRangePopup.h
     Init.h

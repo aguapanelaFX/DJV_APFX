@@ -3,6 +3,8 @@
 
 #include <djv/App/AppPrivate.h>
 #include <djv/App/MainWindow.h>
+#include <djv/Models/ColorModel.h>
+#include <djv/UI/Viewport.h>
 #include <djv/Models/AudioModel.h>
 #include <djv/Models/FilesModel.h>
 #include <opentimelineio/externalReference.h>
@@ -32,10 +34,13 @@
 #include <ctime>
 #include <ftk/Core/Path.h>
 
+#include <chrono>
 #include <filesystem>
+#include <regex>
 #include <fstream>
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 #include <optional>
 
 #if defined(__GLIBC__)
@@ -444,6 +449,218 @@ namespace djv
         const std::shared_ptr<models::RecentFilesModel>& App::getRecentPlaylistsModel() const
         {
             return _p->recentPlaylistsModel;
+        }
+
+        namespace
+        {
+            //! The last "v" + digits in a string: its position, the number
+            //! and how many digits it is written with.
+            struct VersionToken
+            {
+                size_t pos = std::string::npos;
+                size_t length = 0;
+                int64_t number = 0;
+                int digits = 0;
+                char v = 'v';
+            };
+
+            VersionToken findVersion(const std::string& value)
+            {
+                VersionToken out;
+                static const std::regex re("([vV])([0-9]+)");
+                for (auto i = std::sregex_iterator(value.begin(), value.end(), re);
+                    i != std::sregex_iterator();
+                    ++i)
+                {
+                    out.pos = static_cast<size_t>(i->position(0));
+                    out.length = static_cast<size_t>(i->length(0));
+                    out.v = (*i)[1].str()[0];
+                    out.digits = static_cast<int>((*i)[2].length());
+                    out.number = std::stoll((*i)[2].str());
+                }
+                return out;
+            }
+
+            std::string replaceAll(std::string value, const std::string& from, const std::string& to)
+            {
+                if (from.empty())
+                    return value;
+                size_t pos = 0;
+                while ((pos = value.find(from, pos)) != std::string::npos)
+                {
+                    value.replace(pos, from.size(), to);
+                    pos += to.size();
+                }
+                return value;
+            }
+        }
+
+        void App::versionUp()
+        {
+            _version(1);
+        }
+
+        void App::versionDown()
+        {
+            _version(-1);
+        }
+
+        void App::_version(int step)
+        {
+            FTK_P();
+            auto a = p.filesModel->getA();
+            if (!a)
+                return;
+            const ftk::Path& path = a->path;
+            const std::string dirBase = path.getDir() + path.getBase();
+            const VersionToken token = findVersion(dirBase);
+            auto hint = [this](const std::string& text)
+            {
+                _context->log("djv::app::App", text);
+                if (_p->mainWindow)
+                {
+                    _p->mainWindow->getViewport()->showHint(text);
+                }
+            };
+            if (std::string::npos == token.pos)
+            {
+                hint("No version number (v001) in the file name.");
+                return;
+            }
+            const std::string oldToken = dirBase.substr(token.pos, token.length);
+            const bool seq = path.isSeq();
+            std::error_code ec;
+            for (int64_t n = token.number + step, tries = 0;
+                n >= 0 && tries < 999;
+                n += step, ++tries)
+            {
+                std::stringstream ss;
+                ss << token.v << std::setw(token.digits) << std::setfill('0') << n;
+                const std::string newToken = ss.str();
+                // Every place the version is written, so a version folder
+                // (renders/v003/shot_v003.exr) moves along with the name.
+                const std::string newDirBase = replaceAll(dirBase, oldToken, newToken);
+                const ftk::Path probe(newDirBase + path.getExt());
+                const std::filesystem::path dir = ftk::toFileSystem(probe.getDir());
+                std::string found;
+                if (seq)
+                {
+                    // Any frame of the sequence; its range may differ from
+                    // the version before.
+                    const std::string base = probe.getBase();
+                    const std::string ext = ftk::toLower(path.getExt());
+                    if (std::filesystem::is_directory(dir, ec))
+                    {
+                        for (const auto& entry : std::filesystem::directory_iterator(dir, ec))
+                        {
+                            const std::string name = ftk::fromFileSystem(entry.path().filename());
+                            if (name.size() > base.size() + ext.size() &&
+                                name.compare(0, base.size(), base) == 0 &&
+                                ftk::toLower(name.substr(name.size() - ext.size())) == ext &&
+                                std::isdigit(static_cast<unsigned char>(name[base.size()])))
+                            {
+                                found = ftk::fromFileSystem(entry.path());
+                                break;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    const std::string file = newDirBase + path.getNum() + path.getExt();
+                    if (std::filesystem::is_regular_file(ftk::toFileSystem(file), ec))
+                    {
+                        found = file;
+                    }
+                }
+                if (found.empty())
+                    continue;
+
+                ftk::DirListOptions dirListOptions;
+                dirListOptions.seqExts = tl::getExts(_context, static_cast<int>(tl::FileType::Seq));
+                dirListOptions.seqMaxDigits = p.settingsModel->getImageSeq().maxDigits;
+                dirListOptions.seq = seq;
+                const auto paths = tl::getPaths(_context, ftk::Path(found), dirListOptions);
+                if (paths.empty())
+                    continue;
+
+                // The file's own color space goes with it to the new
+                // version.
+                const std::string oldKey = path.get();
+                const std::string newKey = paths.front().get();
+                const auto& fileColorSpaces = p.colorModel->getFileColorSpaces();
+                const auto i = fileColorSpaces.find(oldKey);
+                if (i != fileColorSpaces.end())
+                {
+                    p.colorModel->setFileColorSpace(newKey, i->second);
+                }
+
+                a->path = paths.front();
+                a->timeRange.reset();
+                a->framesStated = false;
+                a->videoLayers.clear();
+                a->videoLayer = 0;
+                _reload(true);
+                hint(ftk::Format("Version {0}").arg(newToken).str());
+                return;
+            }
+            hint(step > 0 ? "No newer version found." : "No older version found.");
+        }
+
+        void App::playFilesAsSequence()
+        {
+            FTK_P();
+            const auto& files = p.filesModel->getFiles();
+            if (files.empty())
+                return;
+            if (!p.activeFiles.empty())
+            {
+                if (auto player = p.player->get())
+                {
+                    p.activeFiles.front()->speed = player->getSpeed();
+                    p.activeFiles.front()->currentTime = player->getCurrentTime();
+                    p.activeFiles.front()->inOutRange = player->getInOutRange();
+                }
+            }
+            // Only the files that are media: a timeline opened before as a
+            // sequence is not put inside the next one.
+            models::Playlist playlist;
+            for (const auto& item : files)
+            {
+                const std::string ext = ftk::toLower(item->path.getExt());
+                if (".otio" != ext && ".otioz" != ext)
+                {
+                    playlist.items.push_back(item);
+                }
+            }
+            if (playlist.items.empty())
+                return;
+            std::error_code ec;
+            const std::filesystem::path dir = std::filesystem::temp_directory_path(ec) / "DJV_APFX";
+            std::filesystem::create_directories(dir, ec);
+            const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            std::tm tm = {};
+#if defined(_WIN32)
+            localtime_s(&tm, &now);
+#else
+            localtime_r(&now, &tm);
+#endif
+            char name[64];
+            std::strftime(name, sizeof(name), "Sequence_%Y%m%d_%H%M%S.otio", &tm);
+            const std::string fileName = ftk::fromFileSystem(dir / name);
+            try
+            {
+                models::playlistSave(
+                    fileName,
+                    playlist,
+                    p.settingsModel->getImageSeq().io.defaultSpeed);
+            }
+            catch (const std::exception& e)
+            {
+                _context->log("djv::app::App", e.what(), ftk::LogType::Error);
+                return;
+            }
+            open(ftk::Path(fileName));
         }
 
         void App::reload()
