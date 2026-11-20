@@ -52,6 +52,12 @@ jobs:
         msystem: MSYS
         install: diffutils make nasm pkgconf
 
+    # Pinned: the runners moved to CMake 4.x, which the SDL3 version the
+    # superbuild uses does not configure with.
+    - uses: lukka/get-cmake@latest
+      with:
+        cmakeVersion: "~3.31.0"
+
     - name: Setup environment
       shell: cmd
       run: |
