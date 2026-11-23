@@ -23,7 +23,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # Pinned: windows-latest moved to Visual Studio 2026 and CMake 4.x,
+    # which the superbuild's SDL3 does not configure with. windows-2022
+    # has Visual Studio 2022, which every earlier build used.
+    runs-on: windows-2022
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
 
@@ -52,8 +55,7 @@ jobs:
         msystem: MSYS
         install: diffutils make nasm pkgconf
 
-    # Pinned: the runners moved to CMake 4.x, which the SDL3 version the
-    # superbuild uses does not configure with.
+    # CMake 3.31: knows Visual Studio 2022, and configures SDL3.
     - uses: lukka/get-cmake@latest
       with:
         cmakeVersion: "~3.31.0"
